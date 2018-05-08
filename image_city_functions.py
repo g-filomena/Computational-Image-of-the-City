@@ -1,0 +1,649 @@
+import osmnx as ox, networkx as nx, matplotlib.cm as cm, pandas as pd, numpy as np
+import geopandas as gpd
+import functools
+import community
+import math
+
+from scipy import sparse
+from scipy.sparse import linalg
+
+from shapely.geometry import Point, LineString, Polygon, MultiPolygon, mapping
+from math import sqrt
+import pandas as pd
+from shapely.ops import cascaded_union
+pd.set_option('precision', 10)
+
+"""
+This set of functions is designed for extracting the computational image of the city,
+Nodes, paths and districts are extracted with street network analysis, employing the primal and the dual graph representations.
+Landmarks are extracted via a salience assessment process.
+
+While the use of the terms "nodes" and "edges" can be cause confusion between the graph component and the Lynch components, nodes and edges are here used instead of vertexes and links to be consistent with NetworkX definitions.
+
+"""
+
+# utilities
+	
+def scaling_columnDF(df, i):
+    
+    """
+    it scales a column of a dataframe from 0 to 1
+    
+    Parameters
+    df: pandas dataframe
+    i: string (column name)
+    ----------
+    """
+    df[i+'_sc'] = (df[i]-df[i].min())/(df[i].max()-df[i].min())
+	
+def nodes_dict(G):
+    """
+    it creates a dictionary where keys represent the id of the node, the item is a tuple of coordinates
+    
+    Parameters
+    G: NetworkX graph
+    ----------
+    """
+    nodes_list = G.nodes()
+    nodes_dict = {}
+
+    for i, item in enumerate(nodes_list):
+        cod = item
+        x = nodes_list[item]['x']
+        y = nodes_list[item]['y']
+        nodes_dict[cod] = (x,y)
+    
+    return nodes_dict
+
+def dict_to_df(list_dict, list_col):
+    """
+    take a list of dictionary and merge them in a df,
+    
+    Parameters
+    list_dict: list of dictionaries that will become df columns
+    list_col: list of the names that will be used as colums heading
+    ----------
+    """
+    
+    df = pd.DataFrame(list_dict).T
+    df.columns = ['d{}'.format(i) for i, col in enumerate(df, 1)]
+    df.columns = list_col
+    
+    return(df)
+
+def dual_id_dict(dict_values, graph, nodeAttribute):
+    """
+    It could be used when one deals with a dual graph and wants to reconnect some analysis conducted on this representation to the analysis
+    conducted on the primal graph. It takes for example the nodes betweennes centrality dictionary of the dual, and associate the result 
+    with the original edgeID 
+    
+    Parameters
+    ----------
+    dict_values: dictionary of nodeID and centrality values (or other computation)
+    graph: NetworkX graph
+    nodeAttribute: string, attribute of the node
+    """
+    
+    view = ed.items()
+    ed_list = list(view)
+    ed_dict = {}
+
+    for p in ed_list: ed_dict[graph.node[p[0]][attribute]]=p[1] #streetID and Edge betweenness
+        
+    return(ed_dict)
+
+# math functions for angle computations
+# from Abhinav Ramakrishnan answer in https://stackoverflow.com/a/28261304/7375309
+
+def dot(vA, vB):
+    return vA[0]*vB[0]+vA[1]*vB[1]
+
+def ang(lineA, lineB):
+    # Get nicer vector form
+    vA = [(lineA[0][0]-lineA[1][0]), (lineA[0][1]-lineA[1][1])]
+    vB = [(lineB[0][0]-lineB[1][0]), (lineB[0][1]-lineB[1][1])]
+    # Get dot prod
+    dot_prod = dot(vA, vB)
+    # Get magnitudes
+    magA = dot(vA, vA)**0.5
+    magB = dot(vB, vB)**0.5
+    # Get cosine value
+    cos_ = dot_prod/magA/magB
+    # Get angle in radians and then convert to degrees
+    angle = math.acos(dot_prod/magB/magA)
+    # Basically doing angle <- angle mod 360
+    ang_deg = math.degrees(angle)%360
+    return ang_deg
+     #if ang_deg-180<=0:
+     #    return 180 - ang_deg
+    # else:
+     #    return ang_deg
+        
+def ang_rad(lineA, lineB):
+    """
+    to get the angle in radian
+    
+    """
+    # Get nicer vector form
+    vA = [(lineA[0][0]-lineA[1][0]), (lineA[0][1]-lineA[1][1])]
+    vB = [(lineB[0][0]-lineB[1][0]), (lineB[0][1]-lineB[1][1])]
+    # Get dot prod
+    dot_prod = dot(vA, vB)
+    # Get magnitudes
+    magA = dot(vA, vA)**0.5
+    magB = dot(vB, vB)**0.5
+    # Get cosine value
+    cos_ = dot_prod/magA/magB
+    # Get angle in radians and then convert to degrees
+    angle = math.acos(dot_prod/magB/magA)
+
+    return angle
+
+def euclidean_distance(xs, ys, xt, yt):
+    """ xs stands for x source and xt for x target """
+    return sqrt((xs - xt)**2 + (ys - yt)**2)
+	
+# preparation functions
+	
+def get_fromOSM(place): 
+    """
+    
+    The function downloads and creates a simplified OSMNx graph for a selected area.
+    Afterwards, geopandas dataframes for nodes and edges are created, assignind new nodeID and streeID identifiers.
+    osmid are indeed heavy and confusing.
+        
+    Parameters
+    place: string, name of cities or areas in OSM
+    ----------
+    """
+    G = ox.graph_from_place(place, network_type='all', simplify=True)
+    G = ox.project_graph(G)
+    
+    for i, item in enumerate(G.edges()):
+        if isinstance(G[item[0]][item[1]][0]['osmid'], (list,)):
+            G[item[0]][item[1]][0]['osmid'] = G[item[0]][item[1]][0]['osmid'][0]
+            
+            
+    nodes = ox.graph_to_gdfs(G, nodes=True, edges=False, node_geometry=True, fill_edge_geometry=False)
+    nodes = nodes.drop(nodes[['highway', 'ref', 'lat', 'lon']], axis=1)
+    edges = ox.graph_to_gdfs(G, nodes=False, edges=True, node_geometry=False, fill_edge_geometry=True)
+    edges = edges[['geometry', 'length', 'osmid', 'u','v']]
+    
+    edges = edges.rename(columns = {'u':'old_u'})
+    edges = edges.rename(columns = {'v':'old_v'})
+    
+    nodes = nodes.reset_index(drop=True)
+    nodes['old_nodeID'] = nodes.osmid.astype('int64')
+    nodes['nodeID'] = nodes.index.values.astype(int)
+
+    edges = pd.merge(edges, nodes[['old_nodeID', 'nodeID']], how='left', left_on="old_u", right_on="old_nodeID")
+    edges = edges.rename(columns = {'nodeID':'u'})
+    edges = pd.merge(edges, nodes[['old_nodeID', 'nodeID']], how='left', left_on="old_v", right_on="old_nodeID")
+    edges = edges.rename(columns = {'nodeID':'v'})
+    
+    edges = edges.reset_index(drop=True)
+    edges['streetID'] = edges.index.values.astype(int)
+    
+    nodes = nodes[['nodeID','x','y','geometry']]
+    nodes.gdf_name = 'Nodes_gdf' #for OSMNx
+    edges = edges[['streetID','u','v','key','geometry']]
+    
+    return(nodes, edges)
+
+def get_fromSHP(directory, epsg):
+    """
+    The function loads a vector lines shapefile from a specified directory, along with the epsg coordinate code.
+    It creates two geopandas dataframe, one for street junctions (vertexes) and one for street segments (links).
+    
+    The file (e.g. street network shapefile) is supposed to be already simplified (e.g. not to have pseudo-nodes).
+    The geopandas dataframes are built assuming a planar undirected graph. 
+     
+    Parameters
+    ----------
+    directory: string
+    epsg: int
+    """
+    
+    #try reading street network
+
+    streets_gdf = gpd.read_file(directory)
+    streets_gdf = streets_gdf.to_crs(epsg=epsg)
+    
+    streets_gdf['from'] = "NaN"
+    streets_gdf['to'] = "NaN"
+    streets_gdf = streets_gdf[['geometry', 'from', 'to']]
+    
+    for index, row in streets_gdf.iterrows():
+        line = []
+        
+        # to remove Z coordinates (assuming a planar graph)
+        coord = list(row['geometry'].coords)
+        from_node = coord[0][0:2]
+        to_node = coord[-1][0:2]
+    
+        for i in range(0, len(coord)):
+            point = coord[i][0:2]
+            line.append(point)
+
+        t = LineString([coor for coor in line])
+        
+        streets_gdf.set_value(index,'geometry', t)
+        streets_gdf.set_value(index, 'from', from_node)
+        streets_gdf.set_value(index, 'to', to_node)
+        
+    #removing pseudo-lines and assigning Index
+    streets_gdf = streets_gdf.loc[streets_gdf['from'] != streets_gdf['to']]
+    streets_gdf.reset_index(inplace=True, drop=True)
+    streets_gdf['streetID'] = streets_gdf.index.values.astype(int) 
+    
+
+    #getting unique nodes
+    unique_nodes_tmp = list(streets_gdf['to'].unique()) + list(streets_gdf['from'].unique())
+    unique_nodes = list(set(unique_nodes_tmp))
+    
+    #preparing nodes geodataframe
+    nodes_data = pd.DataFrame.from_records(unique_nodes, columns=['x', 'y']).astype('float')
+    geometry = [Point(xy) for xy in zip(nodes_data.x, nodes_data.y)]
+    nodes = gpd.GeoDataFrame(nodes_data, crs=crs, geometry=geometry)
+    nodes = nodes.reset_index(drop=True)
+    nodes['nodeID'] = nodes.index.values.astype(int)
+    nodes['coordinates'] = list(zip(nodes.x, nodes.y))
+    nodes.gdf_name = 'Nodes_gdf' #for OSMNx
+    
+    edges_tmp = pd.merge(streets_gdf, nodes[['nodeID','coordinates']], how='left', left_on="from", right_on="coordinates")
+    edges_tmp = edges_tmp.drop(edges_tmp[['coordinates']], axis = 1)
+    edges_tmp = edges_tmp.rename(columns = {'nodeID':'u'})
+    
+    edges = pd.merge(edges_tmp, nodes[['nodeID','coordinates']], how='left', left_on="to", right_on="coordinates")
+    edges = edges.drop(edges[['coordinates', 'from', 'to']], axis = 1)
+    edges = edges.rename(columns = {'nodeID':'v'})
+    edges['key']=0 #for OSMNx
+    edges['length'] = gpd.GeoSeries(edges['geometry'].length)
+        
+    return(nodes, edges)
+	
+def graph_fromGDF(nodes, edges):
+    """
+    It creates from due geopandas dataframes (street junctions and street segments) a NetworkX graph, passing by a OSMNx function.
+    The length of the segments and their ID is stored in the edges attributes, as well as the nodeID.
+    
+    Parameters
+    ----------
+    nodes: geopandas dataframe
+    edges: geopandas dataframe    
+    """
+    G = ox.gdfs_to_graph(nodes, edges)
+    t = G.nodes()
+    pos = {}
+
+    for l, item in enumerate(t): pos[item] = (t[l]['x'],t[l]['y'], t[item]['nodeID'])
+
+    Ng = nx.Graph() #Empty graph
+    Ng = Ng.to_undirected()
+    Ng.add_nodes_from(pos.keys()) #Add nodes preserving coordinates
+
+    for i, item in enumerate(Ng.nodes()):
+        Ng.node[item]['x']=pos[item][0]
+        Ng.node[item]['y']=pos[item][1]
+        Ng.node[item]['nodeID']=pos[item][2]
+
+    for i, item in enumerate(G.edges()):
+        Ng.add_edge(item[0], item[1])
+        Ng[item[0]][item[1]]['length']=G[item[0]][item[1]][0]['length']
+        Ng[item[0]][item[1]]['streetID']=G[item[0]][item[1]][0]['streetID']
+        
+    return(Ng)
+
+# centroids for dual analysis
+
+def dual_gdf(edges, nodes, crs):
+    """
+    It creates two dataframes that are supposed to generate the dual graph of a street network. The nodes_dual gdf contains edges 
+    centroids, the edges_dual gdf contains instead links between the street segment centroids. Those dual edges link real street segment 
+    that share a junction.
+    The centroids are stored with the original edge streetID, while the dual edges are associated with several attributes computed on the 
+    original street segments (distance between centroids, deflection angle).
+    
+    Parameters
+    ----------
+    nodes: geopandas dataframe
+    edges: geopandas dataframe  
+    crs: dictionary
+    """
+    
+    centroids_gdf = edges.copy()
+    centroids_gdf['centroid'] = gpd.GeoSeries(centroids_gdf['geometry'].centroid)
+    centroids_gdf['intersecting'] = centroids_gdf['intersecting'].astype(object)
+    
+    index_u = centroids_gdf.columns.get_loc("u")
+    index_v = centroids_gdf.columns.get_loc("v")
+    index_streetID = centroids_gdf.columns.get_loc("streetID")
+         
+    #find_intersecting segments
+    processed = []    
+    for c in centroids_gdf.itertuples():
+        
+        intersections = []
+        from_node = e[index_u]
+        to_node = e[index_v]
+    
+        possible_intersections = centroids_gdf.loc[(centroids_gdf['u'] == from_node) |
+                        (centroids_gdf['u'] == to_node) |
+                        (centroids_gdf['v'] == to_node) |
+                        (centroids_gdf['v'] == from_node)]
+
+        for p in possible_intersections.itertuples():
+            if ((c[0]==p[0]) | ((c[0], p[0]) in processed) | ((p[0], c[0]) in processed)): continue
+        
+            else:
+                intersections.append(p[index_streetID])  #appending streetID
+                processed.append((p[0],c[0]))
+    
+        centroids_gdf.set_value(c[0],'intersecting', intersections)
+        
+    #creating vertexes representing street segments (centroids)
+        
+    centroids_data = centroids_gdf[['streetID', 'intersecting', 'length']]
+    geometry = centroids_gdf['centroid']
+    
+    nodes_dual = gpd.GeoDataFrame(centroids_data, crs=crs, geometry=geometry)
+    nodes_dual['x'] = [x.coords.xy[0][0] for x in centroids_gdf['centroid']]
+    nodes_dual['y'] = [y.coords.xy[1][0] for y in centroids_gdf['centroid']]
+    
+    # creating fictious links between centroids
+    
+    edges_dual = pd.DataFrame(columns=['u','v', 'key', 'geometry', 'length'])
+
+    for row in nodes_dual.itertuples():
+        
+        streetID = row[1] #streetID of the relative segment
+        length = row[3]
+
+        for i in list(row[2]): #intersecting segments
+            # i is the streetID
+            length_i =  centroids_gdf['length'][centroids_gdf.streetID == i][streetID]
+            distance = (length+length_i)/2
+        
+            # adding a row with u-v, key fixed as 0, Linestring geometry 
+            # from the first centroid to the centroid intersecting segment 
+            ls = LineString([row[4], nodes_dual.loc[streetID]['geometry']])
+            
+            edges_dual.loc[-1] = [streetID, i, 0, ls, distance] 
+            edges_dual.index = edges_dual.index + 1
+            
+    edges_dual = edges_dual.sort_index(axis=0)
+    geometry = edges_dual['geometry']
+    edges_dual = gpd.GeoDataFrame(edges_dual[['u','v', 'key', 'length']], crs=crs, geometry=geometry)
+
+    #computing deflection angle
+    
+    for row in edges_dual.itertuples():
+
+        #retrieveing original lines from/to
+        from_node = nodes.loc[edges['u'].loc[edges.streetID == row[1]]].index.tolist()[0]
+        to_node = nodes.loc[edges['v'].loc[edges.streetID == row[1]]].index.tolist()[0]
+                                            
+        from_node2 =  nodes.loc[edges['u'].loc[edges.streetID == row[2]]].index.tolist()[0]           
+        to_node2 =  nodes.loc[edges['v'].loc[edges.streetID == row[2]]].index.tolist()[0]
+    
+        if ((from_node == from_node2) & (to_node == to_node2) | (from_node == to_node2) & (to_node == from_node2)):
+            deflection = 0
+            deflection_rad=0
+    
+        else:
+         
+            try:  
+        
+                x_f = float("{0:.10f}".format(nodes.loc[from_node]['x']))
+                y_f = float("{0:.10f}".format(nodes.loc[from_node]['y']))
+                x_t = float("{0:.10f}".format(nodes.loc[to_node]['x']))
+                y_t = float("{0:.10f}".format(nodes.loc[to_node]['y']))
+            
+                x_f2 = float("{0:.10f}".format(nodes.loc[from_node2]['x']))
+                y_f2 = float("{0:.10f}".format(nodes.loc[from_node2]['y']))    
+                x_t2 = float("{0:.10f}".format(nodes.loc[to_node2]['x']))
+                y_t2 = float("{0:.10f}".format(nodes.loc[to_node2]['y']))          
+                             
+                if (to_node == to_node2):
+                    lineA = ((x_f, y_f),(x_t,y_t))
+                    lineB = ((x_t2, y_t2),(x_f2, y_f2))
+    
+                elif (to_node == from_node2):
+                    lineA = ((x_f, y_f),(x_t,y_t))
+                    lineB = ((x_f2, y_f2),(x_t2, y_t2))
+
+                elif (from_node == from_node2):
+                    lineA = ((x_t, y_t),(x_f,y_f))
+                    lineB = ((x_f2, y_f2),(x_t2, y_t2))
+
+                else: #(from_node == to_node2)
+                    lineA = ((x_t, y_t),(x_f,y_f))
+                    lineB = ((x_t2, y_t2),(x_f2, y_f2))
+        
+                deflection = ang(lineA, lineB)
+                deflection_rad = ang_rad(lineA, lineB)
+            
+            except:
+                deflection = 0
+                deflection_rad = 0
+    
+        edges_dual.set_value(row[0],'deg', deflection)
+        edges_dual.set_value(row[0],'rad', deflection_rad)
+        
+    return(nodes_dual, edges_dual)
+
+def get_dual_graph(nodes_dual, edges_dual):
+    """
+    The function generates a NetworkX graph from nodes and edges dual geopandas dataframes.
+    
+        
+    Parameters
+    ----------
+    nodes_dual: geopandas dataframe
+    edges_dual: geopandas dataframe  
+
+    """
+   
+    nodes_dual.gdf_name = 'Dual_list'
+    Gr = ox.gdfs_to_graph(nodes_dual, edges_dual)
+    
+    n = Gr.nodes()
+    pos = {}
+
+    for l, item in enumerate(n): pos[l] = (n[l]['x'], n[l]['y'], n[l]['streetID'])
+        
+    DG = nx.Graph() #Empty graph
+    DG = DG.to_undirected()
+    DG.add_nodes_from(pos.keys()) #Add nodes preserving coordinates
+    
+    for i, item in enumerate(DG.nodes()):
+        DG.node[i]['x']=pos[i][0]
+        DG.node[i]['y']=pos[i][1]
+        DG.node[i]['streetID']=pos[i][2]
+        
+    for i, item in enumerate(Gr.edges()):
+        DG.add_edge(item[0], item[1])
+        DG[item[0]][item[1]]['length'] = Gr[item[0]][item[1]][0]['length']
+        DG[item[0]][item[1]]['deg'] = Gr[item[0]][item[1]][0]['deg']
+        DG[item[0]][item[1]]['rad'] = Gr[item[0]][item[1]][0]['rad']
+        
+    return(DG)
+
+	
+# natural roads extraction: the function has to be called twice for each segment, to check in both directions
+
+def natural_roads(streetID, natural_id, direction, roads_gdf, nodes_gdf): 
+    """
+        
+    Parameters
+    ----------
+    """
+        
+    angles = {}
+    directions_dict = {}
+        
+    to_node = df_roads.loc[streetID]['u']
+    from_node = df_roads.loc[streetID]['v']
+        
+    #assuming nodeID = ID dataframe
+    x_t = float("{0:.10f}".format(nodes_gdf.loc[to_node]['x']))
+    y_t = float("{0:.10f}".format(nodes_gdf.loc[to_node]['y']))
+    x_f = float("{0:.10f}".format(nodes_gdf.loc[from_node]['x']))
+    y_f = float("{0:.10f}".format(nodes_gdf.loc[from_node]['y']))
+      
+    #continue from the to_node     
+    if (direction == "to"): intersecting = roads_gdf[(roads_gdf['u']== to_node) | (roads_gdf['v']== to_node)]
+    
+    #continue from the from_node
+    else: intersecting = roads_gdf[(roads_gdf['u'] == from_node) | (roads_gdf['v'] == from_node)]
+
+    if (len(intersecting) == 0): return
+    
+    for row_F in intersecting.itertuples():
+        if ((streetID == row_F[0]) | (row_F[-1] != 'NA')): continue
+        
+        to_node_F = row_F[intersecting.columns.get_loc("u")]
+        from_node_F = row_F[intersecting.columns.get_loc("v")]
+
+        x_tf = float("{0:.10f}".format(nodes_gdf.loc[to_node_F]['x']))
+        y_tf = float("{0:.10f}".format(nodes_gdf.loc[to_node_F]['y']))
+        x_ff = float("{0:.10f}".format(nodes_gdf.loc[from_node_F]['x']))
+        y_ff = float("{0:.10f}".format(nodes_gdf.loc[from_node_F]['y']))
+
+        if (to_node == to_node_F):
+            lineA = ((x_f, y_f),(x_t,y_t))
+            lineB = ((x_tf, y_tf),(x_ff, y_ff))
+            towards = "fr"
+        elif (to_node == from_node_F):
+            lineA = ((x_f, y_f),(x_t,y_t))
+            lineB = ((x_ff, y_ff),(x_tf, y_tf))
+            towards = "to"
+        elif (from_node == from_node_F):
+            lineA = ((x_t, y_t),(x_f,y_f))
+            lineB = ((x_ff, y_ff),(x_tf, y_tf))
+            towards = "to"
+        else: #(from_node == to_node_F)
+            lineA = ((x_t, y_t),(x_f,y_f))
+            lineB = ((x_tf, y_tf),(x_ff, y_ff))
+            towards = "fr"
+
+        deflection = ang(lineA, lineB)
+
+        if (deflection >= 45): continue
+        else:
+            angles[row_F[0]] = deflection
+            directions_dict[row_F[0]] = towards
+
+    if (len(angles) == 0): #no natural continuations
+        roads_gdf.set_value(streetID, 'natural_id', natural_id)
+        return
+    else:
+        angles_sorted = sorted(angles, key = angles.get)
+        matchID = angles_sorted[0]
+        roads_gdf.set_value(id_road, 'natural_id', natural_id)
+        natural_roads(matchID, natural_id, directions_dict[matchID], roads_gdf, nodes_gdf)
+    
+    
+    
+# centrality functions
+
+def straightness_centrality(G, weight, normalized = True):
+    """
+        
+    Parameters
+    ----------
+    """
+    path_length = functools.partial(nx.single_source_dijkstra_path_length, weight=weight)
+
+    nodes = G.nodes()
+    straightness_centrality = {}
+
+    # Initialize dictionary containing all the node id and coordinates
+    # coord_nodes = get_nodes_coords(Node, Session)
+    coord_nodes = nodes_dict(G)
+
+    for n in nodes:
+        straightness = 0
+        sp = path_length(G,n)
+
+        if len(sp) > 0 and len(G) > 1:
+            # start computing the sum of euclidean distances
+
+            for target in sp:
+                if n != target and target in coord_nodes:
+                    network_dist = sp[target]
+                    euclidean_dist = euclidean_distance(*coord_nodes[n]+coord_nodes[target])
+                    straightness = straightness + (euclidean_dist/network_dist)
+
+            straightness_centrality[n]= straightness
+               
+            if normalized:
+                straightness_centrality[n] = straightness * (1.0/(len(G)-1.0) )
+
+        else:
+            straightness_centrality[n]=0.0
+
+    return straightness_centrality
+
+def reach_centrality(G, weight, radius, normalized=True):
+    """
+        
+    Parameters
+    ----------
+    """
+    path_length = functools.partial(nx.single_source_dijkstra_path_length, weight=weight)
+
+    nodes = G.nodes()
+    reach_centrality = {}
+    coord_nodes = nodes_dict(G)
+
+    for n in nodes:
+        reach = 0
+        sp = path_length(G,n)
+        sp_radium = dict((k, v) for k, v in sp.items() if v <= radius)
+        
+        if len(sp_radium) > 0 and len(G) > 1:
+            
+            for target in sp_radium:
+                if n != target and target in coord_nodes:
+                    weight_target = G.node[target]['weight']
+                    reach = reach + weight_target
+                        
+
+            reach_centrality[n] = reach
+
+        else:               
+            reach_centrality[n]=0.0
+
+    return reach_centrality
+
+def local_betweenness_centrality(G, w, radius, distance=True):
+    """
+        
+    Parameters
+    ----------
+    """
+    
+    if distance is True:
+        weight=w
+        
+    path_length = functools.partial(nx.single_source_dijkstra_path_length, weight=weight)
+
+    nodes = G.nodes()
+    cb = {}
+    coord_nodes = nodes_dict(G)
+
+    for obj in nodes:
+        sp = path_length(G,obj)
+        sp_radium = dict((k, v) for k, v in sp.items() if v <= radius)
+
+        to_keep = list(sp_radium.keys())
+
+        G_small = nx.Graph(G.subgraph(to_keep))
+        
+        be = nx.betweenness_centrality(G_small, k=None, weight = 'length', normalized=False)
+        cb[obj] = be[obj]
+     
+    return cb
+	
+

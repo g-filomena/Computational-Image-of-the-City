@@ -7,10 +7,10 @@ import math
 from scipy import sparse
 from scipy.sparse import linalg
 
-from shapely.geometry import Point, LineString, Polygon, MultiPolygon, mapping
+from shapely.geometry import Point, LineString, Polygon, MultiPolygon, mapping, MultiLineString
 from math import sqrt
 import pandas as pd
-from shapely.ops import cascaded_union
+from shapely.ops import cascaded_union, linemerge
 pd.set_option('precision', 10)
 
 """
@@ -24,7 +24,7 @@ While the use of the terms "nodes" and "edges" can be cause confusion between th
 
 # utilities
 	
-def scaling_columnDF(df, i):
+def scaling_columnDF(df, i, inverse = False):
     
     """
     it scales a column of a dataframe from 0 to 1
@@ -35,6 +35,8 @@ def scaling_columnDF(df, i):
     ----------
     """
     df[i+'_sc'] = (df[i]-df[i].min())/(df[i].max()-df[i].min())
+    if (inverse == True): df[i+'_sc'] = 1-(df[i]-df[i].min())/(df[i].max()-df[i].min())
+        
 	
 def nodes_dict(G):
     """
@@ -84,11 +86,11 @@ def dual_id_dict(dict_values, graph, nodeAttribute):
     nodeAttribute: string, attribute of the node
     """
     
-    view = ed.items()
+    view = dict_values.items()
     ed_list = list(view)
     ed_dict = {}
 
-    for p in ed_list: ed_dict[graph.node[p[0]][attribute]]=p[1] #streetID and Edge betweenness
+    for p in ed_list: ed_dict[graph.node[p[0]][nodeAttribute]] = p[1] #Attribute and measure
         
     return(ed_dict)
 
@@ -167,7 +169,7 @@ def get_fromOSM(place):
     nodes = ox.graph_to_gdfs(G, nodes=True, edges=False, node_geometry=True, fill_edge_geometry=False)
     nodes = nodes.drop(nodes[['highway', 'ref', 'lat', 'lon']], axis=1)
     edges = ox.graph_to_gdfs(G, nodes=False, edges=True, node_geometry=False, fill_edge_geometry=True)
-    edges = edges[['geometry', 'length', 'osmid', 'u','v']]
+    edges = edges[['geometry', 'length', 'osmid', 'u','v', 'highway','key' 'oneway', 'maxspeed','name']]
     
     edges = edges.rename(columns = {'u':'old_u'})
     edges = edges.rename(columns = {'v':'old_v'})
@@ -186,11 +188,12 @@ def get_fromOSM(place):
     
     nodes = nodes[['nodeID','x','y','geometry']]
     nodes.gdf_name = 'Nodes_gdf' #for OSMNx
-    edges = edges[['streetID','u','v','key','geometry']]
+    edges = edges[['streetID','u','v','key','geometry', 'length', 'highway','oneway', 'maxspeed','name']]
     
     return(nodes, edges)
 
-def get_fromSHP(directory, epsg):
+def get_fromSHP(directory, epsg, crs, simplify = False, area = None,
+                roadType_field = None, direction_field = None, speed_field = None, name_field = None):
     """
     The function loads a vector lines shapefile from a specified directory, along with the epsg coordinate code.
     It creates two geopandas dataframe, one for street junctions (vertexes) and one for street segments (links).
@@ -202,6 +205,11 @@ def get_fromSHP(directory, epsg):
     ----------
     directory: string
     epsg: int
+    roadType_field: string
+    direction_field: string
+    speed_field: string
+    name_field: string
+    area: int
     """
     
     #try reading street network
@@ -209,62 +217,106 @@ def get_fromSHP(directory, epsg):
     streets_gdf = gpd.read_file(directory)
     streets_gdf = streets_gdf.to_crs(epsg=epsg)
     
+    if (area != None):
+        cn = streets_gdf.geometry.unary_union.centroid
+        buffer = cn.buffer(area) 
+        streets_gdf = streets_gdf[streets_gdf.geometry.within(buffer)]
+        
+    columns = [roadType_field, direction_field, speed_field, name_field]
+    new_columns = ['highway','oneway', 'maxspeed','name']
     streets_gdf['from'] = "NaN"
     streets_gdf['to'] = "NaN"
-    streets_gdf = streets_gdf[['geometry', 'from', 'to']]
     
-    for index, row in streets_gdf.iterrows():
+    for n, i in enumerate(columns):
+        if (i is not None): streets_gdf[new_columns[n]] = streets_gdf[i]
+     
+    standard_columns = ['geometry', 'from', 'to']
+    streets_gdf = streets_gdf[standard_columns + 
+                              [new_columns[n] for n, i in enumerate(columns) if i is not None]]
+    
+    index_geometry = streets_gdf.columns.get_loc("geometry")+1
+    
+    for row in streets_gdf.itertuples():
         line = []
         
         # to remove Z coordinates (assuming a planar graph)
-        coord = list(row['geometry'].coords)
+        coord = list(row[index_geometry].coords)
         from_node = coord[0][0:2]
         to_node = coord[-1][0:2]
-    
+                
         for i in range(0, len(coord)):
             point = coord[i][0:2]
             line.append(point)
 
         t = LineString([coor for coor in line])
         
-        streets_gdf.set_value(index,'geometry', t)
-        streets_gdf.set_value(index, 'from', from_node)
-        streets_gdf.set_value(index, 'to', to_node)
+        streets_gdf.set_value(row[0],'geometry', t)
+        streets_gdf.set_value(row[0], 'from', from_node)
+        streets_gdf.set_value(row[0], 'to', to_node)
         
-    #removing pseudo-lines and assigning Index
     streets_gdf = streets_gdf.loc[streets_gdf['from'] != streets_gdf['to']]
-    streets_gdf.reset_index(inplace=True, drop=True)
-    streets_gdf['streetID'] = streets_gdf.index.values.astype(int) 
-    
-
-    #getting unique nodes
     unique_nodes_tmp = list(streets_gdf['to'].unique()) + list(streets_gdf['from'].unique())
     unique_nodes = list(set(unique_nodes_tmp))
+    
+    if (simplify == True):
+        for i in unique_nodes:
+            tmp = streets_gdf[(streets_gdf['from'] == i) | (streets_gdf['to'] == i)]
+            
+            if(len(tmp) != 2): continue
+            
+            else: 
+        
+                index_first = tmp.iloc[0].name
+                index_second = tmp.iloc[1].name
+
+                if (tmp.iloc[0]['from'] == tmp.iloc[1]['from']):
+                    streets_gdf.loc[index_first]['from'] = tmp.iloc[1]['to']
+                elif (tmp.iloc[0]['from'] == tmp.iloc[1]['to']):
+                    streets_gdf.loc[index_first]['from'] = tmp.iloc[1]['from']
+                elif (tmp.iloc[0]['to'] == tmp.iloc[1]['from']):
+                    streets_gdf.loc[index_first]['to'] = tmp.iloc[1]['to'] 
+                else: #(tmp.iloc[0]['to'] == tmp.iloc[1]['to'])
+                    streets_gdf.loc[index_first]['to'] = tmp.iloc[1]['from']
+
+                multi_line = MultiLineString([tmp.iloc[0]['geometry'], tmp.iloc[1]['geometry']])
+                merged_line = linemerge(multi_line)
+                streets_gdf.loc[index_first]['geometry'] = merged_line
+                streets_gdf.drop([index_second], axis=0)
+       
+    # getting unique nodes again
+    streets_gdf = streets_gdf.loc[streets_gdf['from'] != streets_gdf['to']]
+    unique_nodes_tmp = list(streets_gdf['to'].unique()) + list(streets_gdf['from'].unique())
+    unique_nodes = list(set(unique_nodes_tmp))
+    
+    # assigning indexes
+    streets_gdf.reset_index(inplace=True, drop=True)
+    streets_gdf['streetID'] = streets_gdf.index.values.astype(int) 
     
     #preparing nodes geodataframe
     nodes_data = pd.DataFrame.from_records(unique_nodes, columns=['x', 'y']).astype('float')
     geometry = [Point(xy) for xy in zip(nodes_data.x, nodes_data.y)]
     nodes = gpd.GeoDataFrame(nodes_data, crs=crs, geometry=geometry)
-    nodes = nodes.reset_index(drop=True)
+    nodes.reset_index(drop=True, inplace = True)
     nodes['nodeID'] = nodes.index.values.astype(int)
     nodes['coordinates'] = list(zip(nodes.x, nodes.y))
-    nodes.gdf_name = 'Nodes_gdf' #for OSMNx
-    
+
     edges_tmp = pd.merge(streets_gdf, nodes[['nodeID','coordinates']], how='left', left_on="from", right_on="coordinates")
-    edges_tmp = edges_tmp.drop(edges_tmp[['coordinates']], axis = 1)
-    edges_tmp = edges_tmp.rename(columns = {'nodeID':'u'})
+    edges_tmp.drop(edges_tmp[['coordinates']], axis = 1, inplace = True)
+    edges_tmp.rename(columns = {'nodeID':'u'}, inplace = True)
     
     edges = pd.merge(edges_tmp, nodes[['nodeID','coordinates']], how='left', left_on="to", right_on="coordinates")
     edges = edges.drop(edges[['coordinates', 'from', 'to']], axis = 1)
     edges = edges.rename(columns = {'nodeID':'v'})
     edges['key']=0 #for OSMNx
     edges['length'] = gpd.GeoSeries(edges['geometry'].length)
+    nodes.drop(['coordinates'], axis = 1, inplace = True)
+    nodes.gdf_name = 'Nodes_gdf' #for OSMNx
         
     return(nodes, edges)
 	
 def graph_fromGDF(nodes, edges):
     """
-    It creates from due geopandas dataframes (street junctions and street segments) a NetworkX graph, passing by a OSMNx function.
+    It creates from due geopandas dataframes (street junctions and street segments) a NetworkX graph, passing by a OSMnx function.
     The length of the segments and their ID is stored in the edges attributes, as well as the nodeID.
     
     Parameters
@@ -296,7 +348,7 @@ def graph_fromGDF(nodes, edges):
 
 # centroids for dual analysis
 
-def dual_gdf(edges, nodes, crs):
+def dual_gdf(nodes, edges, crs):
     """
     It creates two dataframes that are supposed to generate the dual graph of a street network. The nodes_dual gdf contains edges 
     centroids, the edges_dual gdf contains instead links between the street segment centroids. Those dual edges link real street segment 
@@ -312,20 +364,20 @@ def dual_gdf(edges, nodes, crs):
     """
     
     centroids_gdf = edges.copy()
-    centroids_gdf['centroid'] = gpd.GeoSeries(centroids_gdf['geometry'].centroid)
-    centroids_gdf['intersecting'] = centroids_gdf['intersecting'].astype(object)
+    centroids_gdf['centroid'] = centroids_gdf['geometry'].centroid
+    centroids_gdf['intersecting'] = 'NA'
     
-    index_u = centroids_gdf.columns.get_loc("u")
-    index_v = centroids_gdf.columns.get_loc("v")
-    index_streetID = centroids_gdf.columns.get_loc("streetID")
+    index_u = centroids_gdf.columns.get_loc("u")+1
+    index_v = centroids_gdf.columns.get_loc("v")+1
+    index_streetID = centroids_gdf.columns.get_loc("streetID")+1
          
     #find_intersecting segments
-    processed = []    
+    processed = []
     for c in centroids_gdf.itertuples():
         
         intersections = []
-        from_node = e[index_u]
-        to_node = e[index_v]
+        from_node = c[index_u]
+        to_node = c[index_v]
     
         possible_intersections = centroids_gdf.loc[(centroids_gdf['u'] == from_node) |
                         (centroids_gdf['u'] == to_node) |
@@ -353,15 +405,17 @@ def dual_gdf(edges, nodes, crs):
     # creating fictious links between centroids
     
     edges_dual = pd.DataFrame(columns=['u','v', 'key', 'geometry', 'length'])
-
+    
+   
     for row in nodes_dual.itertuples():
         
         streetID = row[1] #streetID of the relative segment
         length = row[3]
 
         for i in list(row[2]): #intersecting segments
+
             # i is the streetID
-            length_i =  centroids_gdf['length'][centroids_gdf.streetID == i][streetID]
+            length_i =  centroids_gdf['length'][centroids_gdf.streetID == i][i]
             distance = (length+length_i)/2
         
             # adding a row with u-v, key fixed as 0, Linestring geometry 
@@ -474,9 +528,24 @@ def get_dual_graph(nodes_dual, edges_dual):
 
 def natural_roads(streetID, natural_id, direction, roads_gdf, nodes_gdf): 
     """
-        
+    This function takes a direction "to" or "from" and two geopandas dataframes, one for roads one for nodes (or junctions).
+    The dataframes are supposed to be simplified and can be obtained via the functions "get_fromOSM(place)" or "get_fromSHP(directory, 
+    epsg)". 
+    
+    Natural road is a concept presented here and here and regards the cognitive perception/representation of road entities, regardless 
+    changes in names or regardless interruptions. Rather, different street segments are mentally merged according to continuity rules (here 
+    based on the deflection angle and the egoistic choice process, see:...)
+    
+    It takes the ID of the segment processed, the ID of the natural road (has to be controlled in a for loop, see example below)
+    
+    
     Parameters
     ----------
+    streetID: int
+    natural_id: int
+    direction: string
+    roads_gdf: geopandas dataframe
+    nodes_gdf: geopandas dataframe
     """
         
     angles = {}
@@ -575,7 +644,7 @@ def straightness_centrality(G, weight, normalized = True):
                     euclidean_dist = euclidean_distance(*coord_nodes[n]+coord_nodes[target])
                     straightness = straightness + (euclidean_dist/network_dist)
 
-            straightness_centrality[n]= straightness
+            straightness_centrality[n] = straightness
                
             if normalized:
                 straightness_centrality[n] = straightness * (1.0/(len(G)-1.0) )
@@ -585,7 +654,7 @@ def straightness_centrality(G, weight, normalized = True):
 
     return straightness_centrality
 
-def reach_centrality(G, weight, radius, normalized=True):
+def reach_centrality(G, weight, radius):
     """
         
     Parameters
@@ -599,7 +668,7 @@ def reach_centrality(G, weight, radius, normalized=True):
 
     for n in nodes:
         reach = 0
-        sp = path_length(G,n)
+        sp = path_length(G, n)
         sp_radium = dict((k, v) for k, v in sp.items() if v <= radius)
         
         if len(sp_radium) > 0 and len(G) > 1:
@@ -617,17 +686,14 @@ def reach_centrality(G, weight, radius, normalized=True):
 
     return reach_centrality
 
-def local_betweenness_centrality(G, w, radius, distance=True):
+def local_betweenness_centrality(G, weight, radius):
     """
         
     Parameters
     ----------
     """
-    
-    if distance is True:
-        weight=w
-        
-    path_length = functools.partial(nx.single_source_dijkstra_path_length, weight=weight)
+           
+    path_length = functools.partial(nx.single_source_dijkstra_path_length, weight = weight)
 
     nodes = G.nodes()
     cb = {}
@@ -638,7 +704,6 @@ def local_betweenness_centrality(G, w, radius, distance=True):
         sp_radium = dict((k, v) for k, v in sp.items() if v <= radius)
 
         to_keep = list(sp_radium.keys())
-
         G_small = nx.Graph(G.subgraph(to_keep))
         
         be = nx.betweenness_centrality(G_small, k=None, weight = 'length', normalized=False)
@@ -647,3 +712,160 @@ def local_betweenness_centrality(G, w, radius, distance=True):
     return cb
 	
 
+# landmarks
+
+def select_buildings(city_buildings, area_to_clip, base = None):
+    buildings = city_buildings[city_buildings.geometry.within(area_to_clip.geometry.loc[0])]
+    obstructions = city_buildings[city_buildings.geometry.within(area_to_clip.geometry.loc[0].buffer(200))]
+    
+    buildings["area"] = buildings['geometry'].area
+    if (base == None): buildings["base"] = 0
+    else: buildings["base"] = buildings[base]
+        
+    buildings = buildings[buildings['area']>199]
+    buildings = buildings[['height', 'base','geometry', 'area']]
+    buildings['buildingID'] = buildings.index.values.astype(int)
+    
+    return(buildings, obstructions)
+
+
+def structural_properties(buildings_gdf, obstructions, street_gdf):
+    
+    index_geometry = buildings_gdf.columns.get_loc("geometry")+1 
+    sindex = obstructions.sindex
+    street_network = street_gdf.geometry.unary_union
+    
+    for row in buildings_gdf.itertuples():
+        
+        g = row[index_geometry]
+        b200 = g.buffer(200)
+        b150 = g.buffer(150)
+        t = g.envelope
+        coords = mapping(t)['coordinates'][0]
+        d = [(Point(coords[0])).distance(Point(coords[1])), (Point(coords[1])).distance(Point(coords[2]))]
+
+        width = min(d)
+        length = max(d)
+
+        buildings_gdf.set_value(row[0], 'width', width)
+        buildings_gdf.set_value(row[0], 'length', length)
+        
+        possible_matches_index = list(sindex.intersection(b200.bounds))
+        possible_matches = obstructions.iloc[possible_matches_index]
+        #precise matches not necessary here
+    
+        if(len(possible_matches_index) < 1): continue 
+        polygon = MultiPolygon([pol.buffer(11) for pol in possible_matches['geometry']])
+        area_max = (b200.difference(cascaded_union(polygon))).area
+        buildings_gdf.set_value(row[0], 'prom', area_max) #prominence
+        
+        possible_neigh_index = list(sindex.intersection(b150.bounds))
+        possible_neigh = obstructions.iloc[possible_neigh_index]
+        precise_neigh = possible_neigh[possible_neigh.intersects(b150)]
+        buildings_gdf.set_value(row[0], 'neigh', len(precise_neigh)) #neighbours
+        
+        dist = g.distance(street_network)
+        buildings_gdf.set_value(row[0], 'road', dist) #distance road
+
+        
+    buildings_gdf['ext'] = buildings_gdf.area*(buildings_gdf.length/buildings_gdf.width) #extension
+    buildings_gdf['fac'] = buildings_gdf['height']*(buildings_gdf.width) #facade area
+    buildings_gdf.drop(['width','length'], axis=1, inplace = True)
+    
+    return buildings_gdf
+
+
+def visibility(buildings_gdf, sight_lines):
+
+    avg = (sight_lines[['buildingID', 'Shape_Leng']].groupby(['buildingID'], 
+                                            as_index=False)['Shape_Leng'].mean())
+    
+    avg.rename(columns={'Shape_Leng': 'mean_length'}, inplace=True)
+    
+    count =(sight_lines[['buildingID', 'Shape_Leng']].groupby(['buildingID'], 
+                                            as_index=False)['Shape_Leng'].count())
+    count.rename(columns={'Shape_Leng': 'n_lines'}, inplace=True)
+
+    tmp = sight_lines.set_index('buildingID')
+    distant = tmp.groupby('buildingID').agg(lambda copy: copy.values[copy['Shape_Leng'].values.argmax()])
+    distant = distant.reset_index()
+
+    visibility = pd.merge(distant, avg, left_on='buildingID', right_on='buildingID')
+    visibility.drop(['DIST_ALONG','Visibility', 'geometry'], axis=1, inplace=True)
+    visibility.rename(columns = {'Shape_Leng':'distance','mean_length':'mean_distance'}, inplace=True) 
+    
+    tmp = pd.merge(buildings_gdf, visibility[['buildingID','distance', 'mean_distance']], on='buildingID', how='left')  
+    tmp['distance'].fillna((tmp['distance'].min()), inplace=True)
+    tmp['mean_distance'].fillna((tmp['mean_distance'].min()), inplace=True)
+    tmp.rename(columns={'distance': 'vis', 'mean_distance': 'mean_vis'}, inplace=True)
+    
+    return tmp
+
+def cultural_meaning(buildings_gdf, cultural_elements, score = None):
+    sindex = cultural_elements.sindex 
+    buildings_gdf['cult'] = 0
+    
+    index_geometry = buildings_gdf.columns.get_loc("geometry")+1 
+    
+    for row in buildings_gdf.itertuples():
+        g = row[index_geometry] #geometry
+        possible_matches_index = list(sindex.intersection(g.bounds))
+        possible_matches = cultural_elements.iloc[possible_matches_index]
+        precise_matches = possible_matches[possible_matches.intersects(g)]
+        
+        if (score == None): cm = len(precise_matches)
+        elif len(precise_matches) == 0: cm = 0
+        else: cm = precise_matches[score].sum()
+        
+        buildings_gdf.set_value(row[0], 'cult', cm) #cultural meaning
+     
+    return buildings_gdf
+        
+def pragmatic_meaning(buildings_gdf):
+        
+    buildings_gdf['nr'] = 1
+    sindex = buildings_gdf.sindex
+    buildings_gdf['prag']= 0.0
+    index_geometry = buildings_gdf.columns.get_loc("geometry")+1
+    index_land_use = buildings_gdf.columns.get_loc("land_use")+1 
+
+    for row in buildings_gdf.itertuples():
+        g = row[index_geometry] #geometry
+        b = g.buffer(200)
+        use = row[index_land_use]
+
+        possible_matches_index = list(sindex.intersection(b.bounds))
+        possible_matches = buildings_gdf.iloc[possible_matches_index]
+        precise_matches = buildings_gdf[buildings_gdf.intersects(b)]
+
+        neigh = precise_matches.groupby(['land_use'], as_index=True)['nr'].sum()
+        Nj = neigh.loc[use]
+        #Pj = Nj/N
+
+        Pj = 1-(Nj/precise_matches['nr'].sum())
+        buildings_gdf.set_value(row[0], 'prag', Pj) #pragmatic meaning
+        
+    return buildings_gdf
+        
+        
+def compute_scores(buildings_gdf):
+
+    col = ['area', 'ext', 'fac', 'height', 'prag', 'prom','cult', 'vis']
+    for i in col: scaling_columnDF(buildings_gdf, i)
+
+    col = ['neigh', 'road']
+    for i in col: scaling_columnDF(buildings_gdf, i, inverse = True)     
+
+    buildings_gdf['vScore']= (buildings_gdf['fac_sc']*30 + buildings_gdf['height_sc']*20 + buildings_gdf['vis_sc']*50)/100
+    buildings_gdf['sScore']= (buildings_gdf['ext_sc']*30 + buildings_gdf['neigh_sc']*20 + buildings_gdf['prom_sc']*30 
+                              + buildings_gdf['road_sc']*20)/100
+
+    col = ['vScore', 'sScore']
+    for i in col: scaling_columnDF(buildings_gdf, i)
+
+    buildings_gdf['gScore']=(buildings_gdf['vScore_sc']*50 + buildings_gdf['sScore_sc']*30 + buildings_gdf['cult_sc']*10 
+                       + buildings_gdf['prag_sc']*10)/100
+
+    scaling_columnDF(buildings_gdf, 'gScore')
+    
+    return buildings_gdf

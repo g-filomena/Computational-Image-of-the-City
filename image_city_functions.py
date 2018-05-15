@@ -869,3 +869,83 @@ def compute_scores(buildings_gdf):
     scaling_columnDF(buildings_gdf, 'gScore')
     
     return buildings_gdf
+
+
+def local_scores(landmarks_gdf, point, buffer_extension):
+    
+    LL = landmarks_gdf[landmarks_gdf.geometry.within(point.buffer(buffer_extension))]
+    
+    col = ['area', 'ext', 'fac', 'height', 'prag', 'prom','cult', 'vis']
+    for i in col: scaling_columnDF(LL, i)
+
+    col = ['neigh', 'road']
+    for i in col: scaling_columnDF(LL, i, inverse = True)
+        
+    LL['vScore']= (LL['fac_sc']*30 + LL['height_sc']*20 + LL['vis_sc']*50)/100
+    LL['sScore']= (LL['ext_sc']*30 + LL['neigh_sc']*20 + LL['prom_sc']*30 + LL['road_sc']*20)/100
+
+    col = ['vScore', 'sScore']
+    for i in col: scaling_columnDF(LL, i)
+
+    LL['lScore']=(LL['vScore_sc']*20 + LL['sScore_sc']*30 + LL['cult_sc']*10 + LL['prag_sc']*40)/100
+    scaling_columnDF(LL, 'lScore')
+    
+    return LL
+
+
+def decision_score(nodes_gdf, landmarks_gdf):
+    
+        
+    # assigning a decision point score per each node
+    # each node get the score of the best local landmark
+
+    spatial_index = landmarks_gdf.sindex
+    nodes_gdf['DE'] = 0.0
+    index_geometry = nodes_gdf.columns.get_loc("geometry")+1
+
+    for row in nodes_gdf.itertuples():
+        g = row[index_geometry] #geometry
+        b = g.buffer(50)    
+        local_landmarks = local_scores(landmarks_gdf, g, 800)
+        
+        spatial_index = local_landmarks.sindex
+        possible_matches_index = list(spatial_index.intersection(b.bounds))
+        possible_matches = local_landmarks.iloc[possible_matches_index]
+        precise_matches = possible_matches[possible_matches.intersects(b)]
+        
+        if (len(precise_matches)==0): continue
+    
+        precise_matches = precise_matches.sort_values(by='lScore', ascending=False).reset_index()
+        score = precise_matches['lScore'].loc[0]
+        nodes_gdf.set_value(row[0], 'DE', score)
+        
+    return nodes_gdf
+
+
+def distant_score(nodes_gdf, landmarks_gdf, sight_lines):
+    
+    # keeping relevant landmarks and the sight lines that point at them
+
+    relevant = landmarks_gdf[landmarks_gdf.gScore_sc > 0.5]
+    index_relevant = landmarks_gdf['buildingID'].values.astype(int) 
+    sightLine_to_relevant = sight_lines[sight_lines['buildingID'].isin(index_relevant)]
+
+    # per each node, the sight lines to the relevant landmarks are extracted. 
+    # The visibility score of each node is the sum of the score of the visible landmarks visible from it, regardless the direction
+
+    nodes_gdf['DD'] = 0.0
+    nodes_gdf['visible_landmarks'] = 'NA' 
+
+    index_nodeID = nodes_gdf.columns.get_loc("nodeID")+1
+    
+    for row in nodes_gdf.itertuples():
+        sight_node = sightLine_to_relevant[sightLine_to_relevant['nodeID'] == row[index_nodeID]] 
+        index_relevant_fromNode = list(sight_node['buildingID'].values.astype(int))
+        relevant_fromNode = relevant[relevant['buildingID'].isin(index_relevant_fromNode)] 
+        
+        score = relevant_fromNode['vis_sc'].sum()
+        nodes_gdf.set_value(row[0], 'DD', score)   
+        nodes_gdf.set_value(row[0], 'visible_landmarks', list(relevant_fromNode['buildingID'].values.astype(int)))
+        
+    return nodes_gdf 
+    

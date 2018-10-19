@@ -3,9 +3,11 @@ import geopandas as gpd
 import functools
 import community
 import math
+import matplotlib.pyplot as plt
 
 from scipy import sparse
 from scipy.sparse import linalg
+import pysal as ps
 
 from shapely.geometry import Point, LineString, Polygon, MultiPolygon, mapping, MultiLineString
 from math import sqrt
@@ -24,6 +26,46 @@ While the use of the terms "nodes" and "edges" can be cause confusion between th
 
 # utilities
 	
+def plot_grad_GDF_manualBreaks(gdf, column, title):
+    bins = [0.12, 0.25, 0.50, 0.75, 1.00]
+    cl = ps.User_Defined(gdf[column], bins)
+    
+    f, ax = plt.subplots(1, figsize=(15, 15))
+    gdf.assign(cl=cl.yb).plot(ax=ax, column='cl', categorical=True, k=5, cmap='OrRd', linewidth=0.5,
+                              legend=True)
+    f.suptitle(title)
+    plt.axis('equal')
+    
+    leg = ax.get_legend()
+    leg.set_bbox_to_anchor((0., 0., 0.2, 0.2))
+    leg.get_texts()[0].set_text('0.00 - 0.12')
+    leg.get_texts()[1].set_text('0.12 - 0.25')
+    leg.get_texts()[2].set_text('0.25 - 0.50')
+    leg.get_texts()[3].set_text('0.50 - 0.75')
+    leg.get_texts()[4].set_text('0.75 - 1.00')
+    
+    leg.get_frame().set_linewidth(0.0)
+    
+    ax.set_axis_off()
+    plt.show()
+    
+def plot_grad_GDF(gdf, column, title, black_back, cmap = 'Greys_r'):
+    
+    f, ax = plt.subplots(1, figsize=(15, 15))
+    gdf.plot(ax = ax, column = column, k = 7, cmap = 'Greys_r', linewidth = 1.2, scheme = 'fisher_jenks', legend=False)
+    sm = plt.cm.ScalarMappable(cmap='hot', norm=plt.Normalize(vmin=vmin, vmax=vmax))
+    f.suptitle(title)
+    ax.set_axis_off()
+    plt.axis('equal')
+    if black_back == True: plt.rcParams['figure.facecolor'] = 'black'
+    else: plt.rcParams['figure.facecolor'] = 'white'     
+    leg = ax.get_legend()  
+    leg.get_frame().set_linewidth(0.0)
+    sm._A = []
+    fig.colorbar(sm)
+    
+    plt.show()
+
 def scaling_columnDF(df, i, inverse = False):
     
     """
@@ -147,7 +189,7 @@ def euclidean_distance(xs, ys, xt, yt):
 	
 # preparation functions
 	
-def get_fromOSM(place): 
+def get_fromOSM(type_download, place, network_type, distance = 7000): 
     """
     
     The function downloads and creates a simplified OSMNx graph for a selected area.
@@ -158,7 +200,23 @@ def get_fromOSM(place):
     place: string, name of cities or areas in OSM
     ----------
     """
-    G = ox.graph_from_place(place, network_type='all', simplify=True)
+    
+    if type_download == 'shapefilePolygon':
+        file = gpd.read_file(place)
+        polygon = file.geometry.loc[0]
+        G = ox.graph_from_polygon(polygon, network_type = network_type, simplify = True)
+
+    elif type_download == 'OSMpolygon':
+        query = ox.osm_polygon_download(place, limit=1, polygon_geojson=1)
+        OSMplace = query[0]['display_name']
+        G = ox.graph_from_place(OSMplace, network_type = network_type, simplify = True)
+        
+    elif type_download == 'distance_from_address':
+        G = ox.graph_from_address(place, network_type = network_type, distance = distance, simplify = True)
+
+    else: # (type_download == 'OSMplace')
+        G = ox.graph_from_place(place, network_type = network_type, simplify = True)
+    
     G = ox.project_graph(G)
     
     for i, item in enumerate(G.edges()):
@@ -169,7 +227,7 @@ def get_fromOSM(place):
     nodes = ox.graph_to_gdfs(G, nodes=True, edges=False, node_geometry=True, fill_edge_geometry=False)
     nodes = nodes.drop(nodes[['highway', 'ref', 'lat', 'lon']], axis=1)
     edges = ox.graph_to_gdfs(G, nodes=False, edges=True, node_geometry=False, fill_edge_geometry=True)
-    edges = edges[['geometry', 'length', 'osmid', 'u','v', 'highway','key' 'oneway', 'maxspeed','name']]
+    edges = edges[['geometry', 'length', 'osmid', 'u','v', 'highway','key', 'oneway', 'maxspeed','name']]
     
     edges = edges.rename(columns = {'u':'old_u'})
     edges = edges.rename(columns = {'v':'old_v'})
@@ -227,7 +285,7 @@ def get_fromSHP(directory, epsg, crs, simplify = False, area = None,
     streets_gdf['from'] = "NaN"
     streets_gdf['to'] = "NaN"
     
-    for n, i in enumerate(columns):
+    for n, i in enumerate(columns): 
         if (i is not None): streets_gdf[new_columns[n]] = streets_gdf[i]
      
     standard_columns = ['geometry', 'from', 'to']
@@ -281,7 +339,7 @@ def get_fromSHP(directory, epsg, crs, simplify = False, area = None,
                 multi_line = MultiLineString([tmp.iloc[0]['geometry'], tmp.iloc[1]['geometry']])
                 merged_line = linemerge(multi_line)
                 streets_gdf.loc[index_first]['geometry'] = merged_line
-                streets_gdf.drop([index_second], axis=0)
+                streets_gdf.drop([index_second], axis=0, inplace = True)
        
     # getting unique nodes again
     streets_gdf = streets_gdf.loc[streets_gdf['from'] != streets_gdf['to']]
@@ -314,7 +372,7 @@ def get_fromSHP(directory, epsg, crs, simplify = False, area = None,
         
     return(nodes, edges)
 	
-def graph_fromGDF(nodes, edges):
+def graph_fromGDF(nodes, edges, nodes_attributes, edges_costs):
     """
     It creates from due geopandas dataframes (street junctions and street segments) a NetworkX graph, passing by a OSMnx function.
     The length of the segments and their ID is stored in the edges attributes, as well as the nodeID.
@@ -324,6 +382,10 @@ def graph_fromGDF(nodes, edges):
     nodes: geopandas dataframe
     edges: geopandas dataframe    
     """
+    
+    nodes.gdf_name = 'Nodes_list' #for OSMNx
+    edges.gdf_name = 'Edges_list' #for OSMNx
+    
     G = ox.gdfs_to_graph(nodes, edges)
     t = G.nodes()
     pos = {}
@@ -337,12 +399,13 @@ def graph_fromGDF(nodes, edges):
     for i, item in enumerate(Ng.nodes()):
         Ng.node[item]['x']=pos[item][0]
         Ng.node[item]['y']=pos[item][1]
-        Ng.node[item]['nodeID']=pos[item][2]
-
+        Ng.node[item]['nodeID'] = pos[item][2]
+        for attribute in nodes_attributes: Ng.node[item][attribute] = nodes[attribute][nodes['nodeID'] == pos[item][2]].tolist()[0]
+                                                                                       
     for i, item in enumerate(G.edges()):
         Ng.add_edge(item[0], item[1])
-        Ng[item[0]][item[1]]['length']=G[item[0]][item[1]][0]['length']
         Ng[item[0]][item[1]]['streetID']=G[item[0]][item[1]][0]['streetID']
+        for cost in edges_costs: Ng[item[0]][item[1]][cost] = G[item[0]][item[1]][0][cost]
         
     return(Ng)
 
@@ -406,21 +469,25 @@ def dual_gdf(nodes, edges, crs):
     
     edges_dual = pd.DataFrame(columns=['u','v', 'key', 'geometry', 'length'])
     
-   
+    index_length = nodes_dual.columns.get_loc("length")+1
+    index_streetID_nd = nodes_dual.columns.get_loc("streetID")+1
+    index_intersecting = nodes_dual.columns.get_loc("intersecting")+1
+    index_geometry = nodes_dual.columns.get_loc("geometry")+1
+
     for row in nodes_dual.itertuples():
         
-        streetID = row[1] #streetID of the relative segment
-        length = row[3]
+        streetID = row[index_streetID_nd] #streetID of the relative segment
+        length = row[index_length]
 
-        for i in list(row[2]): #intersecting segments
+        for i in list(row[index_intersecting]): #intersecting segments
 
             # i is the streetID
-            length_i =  centroids_gdf['length'][centroids_gdf.streetID == i][i]
+            length_i =  nodes_dual['length'][nodes_dual.streetID == i][i]
             distance = (length+length_i)/2
         
             # adding a row with u-v, key fixed as 0, Linestring geometry 
             # from the first centroid to the centroid intersecting segment 
-            ls = LineString([row[4], nodes_dual.loc[streetID]['geometry']])
+            ls = LineString([row[index_geometry], nodes_dual.loc[i]['geometry']])
             
             edges_dual.loc[-1] = [streetID, i, 0, ls, distance] 
             edges_dual.index = edges_dual.index + 1
@@ -431,37 +498,43 @@ def dual_gdf(nodes, edges, crs):
 
     #computing deflection angle
     
+    
+    index_line = edges_dual.columns.get_loc("u")+1
+    index_line2 = edges_dual.columns.get_loc("v")+1
+    
+    index_streetID_nd = nodes_dual.columns.get_loc("streetID")+1
+    index_intersecting = nodes_dual.columns.get_loc("intersecting")+1
+    index_geometry = nodes_dual.columns.get_loc("geometry")+1
+    
     for row in edges_dual.itertuples():
 
         #retrieveing original lines from/to
-        from_node = nodes.loc[edges['u'].loc[edges.streetID == row[1]]].index.tolist()[0]
-        to_node = nodes.loc[edges['v'].loc[edges.streetID == row[1]]].index.tolist()[0]
+        from_node = nodes.loc[edges['u'].loc[edges.streetID == row[index_line]]].index.tolist()[0]
+        to_node = nodes.loc[edges['v'].loc[edges.streetID == row[index_line]]].index.tolist()[0]
                                             
-        from_node2 =  nodes.loc[edges['u'].loc[edges.streetID == row[2]]].index.tolist()[0]           
-        to_node2 =  nodes.loc[edges['v'].loc[edges.streetID == row[2]]].index.tolist()[0]
+        from_node2 =  nodes.loc[edges['u'].loc[edges.streetID == row[index_line2]]].index.tolist()[0]           
+        to_node2 =  nodes.loc[edges['v'].loc[edges.streetID == row[index_line2]]].index.tolist()[0]
     
-        if ((from_node == from_node2) & (to_node == to_node2) | (from_node == to_node2) & (to_node == from_node2)):
+        if (((from_node == from_node2) & (to_node == to_node2)) | ((from_node == to_node2) & (to_node == from_node2))):
             deflection = 0
             deflection_rad=0
     
         else:
-         
-            try:  
-        
+            try:
                 x_f = float("{0:.10f}".format(nodes.loc[from_node]['x']))
                 y_f = float("{0:.10f}".format(nodes.loc[from_node]['y']))
                 x_t = float("{0:.10f}".format(nodes.loc[to_node]['x']))
                 y_t = float("{0:.10f}".format(nodes.loc[to_node]['y']))
-            
+
                 x_f2 = float("{0:.10f}".format(nodes.loc[from_node2]['x']))
                 y_f2 = float("{0:.10f}".format(nodes.loc[from_node2]['y']))    
                 x_t2 = float("{0:.10f}".format(nodes.loc[to_node2]['x']))
                 y_t2 = float("{0:.10f}".format(nodes.loc[to_node2]['y']))          
-                             
+
                 if (to_node == to_node2):
                     lineA = ((x_f, y_f),(x_t,y_t))
                     lineB = ((x_t2, y_t2),(x_f2, y_f2))
-    
+
                 elif (to_node == from_node2):
                     lineA = ((x_f, y_f),(x_t,y_t))
                     lineB = ((x_f2, y_f2),(x_t2, y_t2))
@@ -473,20 +546,20 @@ def dual_gdf(nodes, edges, crs):
                 else: #(from_node == to_node2)
                     lineA = ((x_t, y_t),(x_f,y_f))
                     lineB = ((x_t2, y_t2),(x_f2, y_f2))
-        
+
                 deflection = ang(lineA, lineB)
                 deflection_rad = ang_rad(lineA, lineB)
-            
+         
             except:
                 deflection = 0
                 deflection_rad = 0
-    
+        
         edges_dual.set_value(row[0],'deg', deflection)
         edges_dual.set_value(row[0],'rad', deflection_rad)
         
     return(nodes_dual, edges_dual)
 
-def get_dual_graph(nodes_dual, edges_dual):
+def get_dual_graph(nodes_dual, edges_dual, edge_costs):
     """
     The function generates a NetworkX graph from nodes and edges dual geopandas dataframes.
     
@@ -517,9 +590,7 @@ def get_dual_graph(nodes_dual, edges_dual):
         
     for i, item in enumerate(Gr.edges()):
         DG.add_edge(item[0], item[1])
-        DG[item[0]][item[1]]['length'] = Gr[item[0]][item[1]][0]['length']
-        DG[item[0]][item[1]]['deg'] = Gr[item[0]][item[1]][0]['deg']
-        DG[item[0]][item[1]]['rad'] = Gr[item[0]][item[1]][0]['rad']
+        for cost in costs: DG[item[0]][item[1]][cost] = Gr[item[0]][item[1]][0][cost]
         
     return(DG)
 
@@ -714,21 +785,32 @@ def local_betweenness_centrality(G, weight, radius):
 
 # landmarks
 
-def select_buildings(city_buildings, area_to_clip, base = None):
-    buildings = city_buildings[city_buildings.geometry.within(area_to_clip.geometry.loc[0])]
-    obstructions = city_buildings[city_buildings.geometry.within(area_to_clip.geometry.loc[0].buffer(200))]
+def select_buildings(city_buildings, area_to_clip, height_field, base = None, area_obstructions = None):
     
-    buildings["area"] = buildings['geometry'].area
-    if (base == None): buildings["base"] = 0
-    else: buildings["base"] = buildings[base]
+    buildings = city_buildings[city_buildings.geometry.within(area_to_clip.geometry.loc[0])]
+
+    city_buildings["area"] = city_buildings['geometry'].area
+    city_buildings["height"] = city_buildings[height_field]
+    if (base is None): city_buildings["base"] = 0
+    else: city_buildings["base"] = city_buildings[base]
         
-    buildings = buildings[buildings['area']>199]
-    buildings = buildings[['height', 'base','geometry', 'area']]
+    city_buildings = city_buildings[city_buildings['area'] > 199]
+    city_buildings = city_buildings[['height', 'base','geometry', 'area']]
     buildings['buildingID'] = buildings.index.values.astype(int)
     
+    if  (area_obstructions is None): area_obstructions = area_to_clip.geometry.loc[0].buffer(800)
+    else: area_obstructions = area_obstructions.geometry.loc[0]
+    
+    obstructions = city_buildings[city_buildings.geometry.within(area_obstructions)]
+    buildings = city_buildings[city_buildings.geometry.within(area_to_clip.geometry.loc[0])]
+    buildings['buildingID'] = buildings.index.values.astype(int)
+    buildings['r_height'] = buildings['height']+buildings['base']
     return(buildings, obstructions)
 
-
+def get_obstructions(city_buildings, area_to_clip):
+        obstructions = city_buildings[city_buildings.geometry.within(area_to_clip.geometry.loc[0])]
+        return obstructions
+    
 def structural_properties(buildings_gdf, obstructions, street_gdf):
     
     index_geometry = buildings_gdf.columns.get_loc("geometry")+1 
@@ -755,9 +837,6 @@ def structural_properties(buildings_gdf, obstructions, street_gdf):
         #precise matches not necessary here
     
         if(len(possible_matches_index) < 1): continue 
-        polygon = MultiPolygon([pol.buffer(11) for pol in possible_matches['geometry']])
-        area_max = (b200.difference(cascaded_union(polygon))).area
-        buildings_gdf.set_value(row[0], 'prom', area_max) #prominence
         
         possible_neigh_index = list(sindex.intersection(b150.bounds))
         possible_neigh = obstructions.iloc[possible_neigh_index]
@@ -768,7 +847,7 @@ def structural_properties(buildings_gdf, obstructions, street_gdf):
         buildings_gdf.set_value(row[0], 'road', dist) #distance road
 
         
-    buildings_gdf['ext'] = buildings_gdf.area*(buildings_gdf.length/buildings_gdf.width) #extension
+    buildings_gdf['ext'] = buildings_gdf.area #extension
     buildings_gdf['fac'] = buildings_gdf['height']*(buildings_gdf.width) #facade area
     buildings_gdf.drop(['width','length'], axis=1, inplace = True)
     
@@ -820,6 +899,48 @@ def cultural_meaning(buildings_gdf, cultural_elements, score = None):
         buildings_gdf.set_value(row[0], 'cult', cm) #cultural meaning
      
     return buildings_gdf
+
+
+def land_use_from_poly(buildings_gdf, other_gdf, land_use_field):
+    
+    buildings_gdf['land_use'] = 'NaN'
+    sindex = other_gdf.sindex
+
+    index_geometry = buildings_gdf.columns.get_loc("geometry")+1 
+    index_geometryPol = other_gdf.columns.get_loc("geometry")+1 
+
+    for row in buildings_gdf.itertuples():
+
+        g = row[index_geometry] #geometry
+
+        possible_matches_index = list(sindex.intersection(g.bounds))
+        possible_matches = other_gdf.iloc[possible_matches_index]
+        precise_matches = possible_matches[possible_matches.intersects(g)]
+        precise_matches['area'] = 0.0
+
+        
+        if (len(precise_matches) == 0): continue
+
+        for row_other in precise_matches.itertuples():
+            t = row_other[index_geometryPol]
+            try:
+                area_intersec = t.intersection(g).area
+            except: 
+                 continue
+                    
+            precise_matches.set_value(row_other[0], 'area', area_intersec)
+    
+        pm = precise_matches.sort_values(by='area', ascending=False).reset_index()
+        
+        if (pm['area'].loc[0] > (g.area * 0.59)):
+            main_use = pm[land_use_field].loc[0]
+            buildings_gdf.set_value(row[0], 'land_use', main_use)
+            
+        else: continue
+        
+    return buildings_gdf
+
+
         
 def pragmatic_meaning(buildings_gdf):
         
@@ -836,7 +957,7 @@ def pragmatic_meaning(buildings_gdf):
 
         possible_matches_index = list(sindex.intersection(b.bounds))
         possible_matches = buildings_gdf.iloc[possible_matches_index]
-        precise_matches = buildings_gdf[buildings_gdf.intersects(b)]
+        precise_matches = possible_matches [possible_matches.intersects(b)]
 
         neigh = precise_matches.groupby(['land_use'], as_index=True)['nr'].sum()
         Nj = neigh.loc[use]
@@ -850,14 +971,14 @@ def pragmatic_meaning(buildings_gdf):
         
 def compute_scores(buildings_gdf):
 
-    col = ['area', 'ext', 'fac', 'height', 'prag', 'prom','cult', 'vis']
+    col = ['area', 'ext', 'fac', 'height', 'prag', '2dvis','cult', 'vis']
     for i in col: scaling_columnDF(buildings_gdf, i)
 
     col = ['neigh', 'road']
     for i in col: scaling_columnDF(buildings_gdf, i, inverse = True)     
 
     buildings_gdf['vScore']= (buildings_gdf['fac_sc']*30 + buildings_gdf['height_sc']*20 + buildings_gdf['vis_sc']*50)/100
-    buildings_gdf['sScore']= (buildings_gdf['ext_sc']*30 + buildings_gdf['neigh_sc']*20 + buildings_gdf['prom_sc']*30 
+    buildings_gdf['sScore']= (buildings_gdf['ext_sc']*30 + buildings_gdf['neigh_sc']*20 + buildings_gdf['2dvis_sc']*30 
                               + buildings_gdf['road_sc']*20)/100
 
     col = ['vScore', 'sScore']
@@ -871,61 +992,88 @@ def compute_scores(buildings_gdf):
     return buildings_gdf
 
 
-def local_scores(landmarks_gdf, point, buffer_extension):
+def local_scores(landmarks_gdf, buffer_extension):
     
-    LL = landmarks_gdf[landmarks_gdf.geometry.within(point.buffer(buffer_extension))]
+    spatial_index = landmarks_gdf.sindex
+    index_geometry = landmarks_gdf.columns.get_loc("geometry")+1
+    landmarks_gdf['lScore'] = 0.0
     
-    col = ['area', 'ext', 'fac', 'height', 'prag', 'prom','cult', 'vis']
-    for i in col: scaling_columnDF(LL, i)
-
-    col = ['neigh', 'road']
-    for i in col: scaling_columnDF(LL, i, inverse = True)
+    col = ['area', 'ext', 'fac', 'height', 'prag', '2dvis','cult', 'vis']
+    col_inverse = ['neigh', 'road']
+   
+    for row in landmarks_gdf.itertuples():
+        b = row[index_geometry].centroid.buffer(buffer_extension)
         
-    LL['vScore']= (LL['fac_sc']*30 + LL['height_sc']*20 + LL['vis_sc']*50)/100
-    LL['sScore']= (LL['ext_sc']*30 + LL['neigh_sc']*20 + LL['prom_sc']*30 + LL['road_sc']*20)/100
-
-    col = ['vScore', 'sScore']
-    for i in col: scaling_columnDF(LL, i)
-
-    LL['lScore']=(LL['vScore_sc']*20 + LL['sScore_sc']*30 + LL['cult_sc']*10 + LL['prag_sc']*40)/100
-    scaling_columnDF(LL, 'lScore')
-    
-    return LL
+#         LL = landmarks_gdf[landmarks_gdf.geometry.within(row[index_geometry].centroid.buffer(buffer_extension))]
+        possible_matches_index = list(spatial_index.intersection(b.bounds))
+        possible_matches = landmarks_gdf.iloc[possible_matches_index]
+        LL = possible_matches[possible_matches.intersects(b)]
+        
+        for i in col: scaling_columnDF(LL, i)
+        for i in col_inverse: scaling_columnDF(LL, i, inverse = True)
+        
+        LL['vScore'] =  LL['fac_sc']*0.30 + LL['height_sc']*0.20 + LL['vis_sc']*0.5
+        LL['sScore'] =  LL['ext_sc']*0.30 + LL['neigh_sc']*0.20 + LL['2dvis_sc']*0.3 + LL['road_sc']*0.20
+        LL['lScore'] = LL['vScore_sc']*0.20 + LL['sScore_sc']*0.30 + LL['cult_sc']*0.10 + LL['prag_sc']*0.40
+        
+        localScore = float("{0:.3f}".format(LL['lScore'].loc[row[0]]))
+        landmarks_gdf.set_value(row[0], 'lScore', localScore)
+        scaling_columnDF(landmarks_gdf, 'lScore', inverse = False)
+        
+    return landmarks_gdf
 
 
 def decision_score(nodes_gdf, landmarks_gdf):
     
-        
     # assigning a decision point score per each node
     # each node get the score of the best local landmark
 
     spatial_index = landmarks_gdf.sindex
     nodes_gdf['DE'] = 0.0
+    nodes_gdf['landmarks'] = 'None'
+    nodes_gdf['scores'] = 'None'
     index_geometry = nodes_gdf.columns.get_loc("geometry")+1
 
     for row in nodes_gdf.itertuples():
+       
         g = row[index_geometry] #geometry
         b = g.buffer(50)    
-        local_landmarks = local_scores(landmarks_gdf, g, 800)
         
-        spatial_index = local_landmarks.sindex
         possible_matches_index = list(spatial_index.intersection(b.bounds))
-        possible_matches = local_landmarks.iloc[possible_matches_index]
+        possible_matches = landmarks_gdf.iloc[possible_matches_index]
         precise_matches = possible_matches[possible_matches.intersects(b)]
         
         if (len(precise_matches)==0): continue
     
         precise_matches = precise_matches.sort_values(by='lScore', ascending=False).reset_index()
-        score = precise_matches['lScore'].loc[0]
+        score = float("{0:.3f}".format(precise_matches['lScore'].loc[0]))
         nodes_gdf.set_value(row[0], 'DE', score)
+        precise_matches = precise_matches.round({'lScore':3})
         
+        list_local = precise_matches['buildingID'].tolist()
+        list_scores = precise_matches['lScore'].tolist()
+        nodes_gdf.set_value(row[0], 'landmarks', list_local)
+        nodes_gdf.set_value(row[0], 'scores', list_scores)
+        
+        scaling_columnDF(nodes_gdf, 'DE', inverse = True)
+    
     return nodes_gdf
 
 
-def distant_score(nodes_gdf, landmarks_gdf, sight_lines):
+def distant_score(nodes_gdf, landmarks_gdf, sight_lines, smaller_area = False, all_nodes = None):
     
     # keeping relevant landmarks and the sight lines that point at them
-
+    
+    if smaller_area == True:
+        nodes_gdf['oldID'] = nodes_gdf['nodeID']
+        nodes_gdf['coordinates'] = nodes_gdf[['x', 'y']].apply(tuple, axis=1)
+        all_nodes['coordinates'] = all_nodes[['x', 'y']].apply(tuple, axis=1)
+        nodes_merged = pd.merge(nodes_gdf, all_nodes[['nodeID','coordinates']], left_on = 'coordinates', right_on = 'coordinates', 
+                                how = 'left')
+        nodes_merged['nodeID'] = nodes_merged['nodeID_y'] 
+        nodes_merged.drop(['nodeID_x', 'nodeID_y', 'coordinates'], axis = 1, inplace = True)
+        node_gdf = nodes_merged
+    
     relevant = landmarks_gdf[landmarks_gdf.gScore_sc > 0.5]
     index_relevant = landmarks_gdf['buildingID'].values.astype(int) 
     sightLine_to_relevant = sight_lines[sight_lines['buildingID'].isin(index_relevant)]
@@ -943,9 +1091,281 @@ def distant_score(nodes_gdf, landmarks_gdf, sight_lines):
         index_relevant_fromNode = list(sight_node['buildingID'].values.astype(int))
         relevant_fromNode = relevant[relevant['buildingID'].isin(index_relevant_fromNode)] 
         
-        score = relevant_fromNode['vis_sc'].sum()
+        score = relevant_fromNode['gScore'].sum()
         nodes_gdf.set_value(row[0], 'DD', score)   
         nodes_gdf.set_value(row[0], 'visible_landmarks', list(relevant_fromNode['buildingID'].values.astype(int)))
-        
+     
+    if smaller_area == True:
+        nodes_gdf['nodeID'] = nodes_gdf['oldID']
+        nodes_gdf.drop(['oldID'], axis = 1, inplace = True)
+    
+    scaling_columnDF(nodes_gdf, 'DD', inverse = True)
     return nodes_gdf 
+
+def get_coord_angle(origin, distance, angle):
+
+    # calculate offsets with light trig
+    (disp_x, disp_y) = (distance * math.sin(math.radians(angle)),
+                        distance * math.cos(math.radians(angle)))
+
+    return (origin[0] + disp_x, origin[1] + disp_y)
+
+
+def advance_visibility_buildings(landmarks_gdf, obstructions_gdf):
+    
+    visibility_polygons = landmarks_gdf[['buildingID', 'geometry']].copy()
+    landmarks_gdf['2dvis'] = 0.0
+    
+    sindex = obstructions_gdf.sindex
+    index_geometry = landmarks_gdf.columns.get_loc("geometry")+1
+    counter = 0
+    
+    for row in landmarks_gdf.itertuples():
+
+        if (counter%50 == 0): print(len(landmarks_gdf)-counter," to go")
+        
+        counter += 1 
+        origin = row[index_geometry].centroid
+        exteriors = list(row[index_geometry].exterior.coords)
+        no_holes = Polygon(exteriors)
+        
+        possible_obstacles_index = list(sindex.intersection(origin.buffer(2000).bounds))
+        possible_obstacles = obstructions_gdf.iloc[possible_obstacles_index]
+        possible_obstacles = obstructions_gdf[obstructions_gdf.geometry != row[index_geometry]]
+        possible_obstacles = obstructions_gdf[~obstructions_gdf.geometry.within(no_holes)]
+
+        start = 0.5
+        i = start
+        list_lines = []
+            
+        while(i <= 360):
+
+            coords = get_coord_angle([origin.x, origin.y], distance = 500, angle = i)
+
+            line = LineString([origin, Point(coords)])
+            obstacles = possible_obstacles[possible_obstacles.crosses(line)]
+            ob = cascaded_union(obstacles.geometry)
+
+            if len(obstacles > 0):
+                t = line.intersection(ob)
+
+                try:
+                    intersection = t[0].coords[0]
+                except:
+                    intersection = t.coords[0]
+                
+                lineNew = LineString([origin, Point(intersection)])
+
+            else: lineNew = line
+
+            list_lines.append(lineNew)
+            i = i+1
+
+        list_points = [Point(origin)]
+
+        
+        for i in list_lines: list_points.append(Point(i.coords[1]))
+        list_points.append(Point(origin))
+        poly = Polygon([[p.x, p.y] for p in list_points])
+        
+        try:
+            poly_vis = poly.difference(row[index_geometry])
+        except:
+            pp = poly.buffer(0)
+            poly_vis = pp.difference(row[index_geometry])
+        
+        
+        landmarks_gdf.set_value(row[0],'2dvis', poly_vis.area)
+        
+        try:
+            if len(poly_vis) > 1: #MultiPolygon
+                for i in range(0, len(poly_vis)): 
+                    if (poly_vis[i].area < 100): del poly_vis[i]
+        except:
+            poly_vis = poly_vis
+
+        visibility_polygons.set_value(row[0],'geometry', poly_vis)
+        
+    return landmarks_gdf, visibility_polygons
+
+
+
+
+def advance_visibility_nodes(nodes_gdf, edges_gdf, landmarks_gdf, field_view = True):
+    
+    visibility_polygons = pd.DataFrame(columns = ['nodeID', 'geometry'])
+    if field_view == True: visibility_polygons = pd.DataFrame(columns = ['nodeID', 'from_Node', 'geometry'])
+    
+    degree_field_view = 140
+    index_x = nodes_gdf.columns.get_loc("x")+1 
+    index_y = nodes_gdf.columns.get_loc("y")+1 
+    index_nodeID = nodes_gdf.columns.get_loc("nodeID")+1 
+    index_geometry = nodes_gdf.columns.get_loc("geometry")+1 
+    
+    index_v = edges_gdf.columns.get_loc("v")+1 
+    index_u = edges_gdf.columns.get_loc("u")+1 
+    
+    to_sub = (360-degree_field_view)/2
+    sindex = landmarks_gdf.sindex
+    coming_from = 0
+
+    for row in nodes_gdf.itertuples():
+
+        origin = (float("{0:.10f}".format(row[index_x])), float("{0:.10f}".format(row[index_y])))
+        
+        possible_obstacles_index = list(sindex.intersection(row[index_geometry].buffer(220).bounds))
+        possible_obstacles = landmarks_gdf.iloc[possible_obstacles_index]
+        
+        if field_view == True:
+                
+            segments = edges_gdf[(edges_gdf['v'] == row[index_nodeID]) | (edges_gdf['u'] == row[index_nodeID])]
+            zeroCoord = get_coord_angle(origin, distance = 200, angle = 0.5)
+            
+            for s in segments.itertuples():
+
+                if s[index_v] == row[index_nodeID]:     # take ndode u
+                    otherCoord = (nodes_gdf.x[nodes_gdf['nodeID'] == s[index_u]].tolist()[0], 
+                           nodes_gdf.y[nodes_gdf['nodeID'] == s[index_u]].tolist()[0])
+                    coming_from = s[index_u]
+
+                else: #takes node v
+                    otherCoord = (nodes_gdf.x[nodes_gdf['nodeID'] ==  s[index_v]].tolist()[0], 
+                           nodes_gdf.y[nodes_gdf['nodeID'] == s[index_v]].tolist()[0])
+                    coming_from = s[index_v]
+
+                line0 = ((origin), (zeroCoord))
+                lineB = ((origin), (otherCoord))
+
+                if otherCoord[0] > origin[0]: # east
+
+                    diff = ang(line0, lineB)
+                    start = diff+to_sub
+                    end = start+degree_field_view
+                    if end >360: end = end-360
+
+                else: # west
+                    diff = 180-ang(line0, lineB)
+                    start = 180+diff+to_sub
+                    if start > 360: start = start-360
+
+                    end = start+degree_field_view 
+                    if end > 360: end = end-360
+
+                first_lineCoord = get_coord_angle(origin, distance = 200, angle = start)
+                last_lineCoord = get_coord_angle(origin, distance = 200, angle = end)
+
+                first_line = LineString([row[index_geometry], Point(first_lineCoord)])
+                last_line = LineString([row[index_geometry], Point(last_lineCoord)])
+
+
+                i = start
+                list_lines = []
+
+                while (((end > start) & ((i <= end) & (i >= start))) |
+                       ((end < start) & (((i >= start) & (i > end)) | ((i < start) & (i <= end))))):
+
+                    coords = get_coord_angle(origin, distance = 200, angle = i)
+                    line = LineString([row[index_geometry], Point(coords)])
+
+                    obstacles = possible_obstacles[possible_obstacles.crosses(line)]
+                    ob = cascaded_union(obstacles.geometry)
+
+                    if len(obstacles > 0):
+                        t = line.intersection(ob)
+
+                        try:
+                            intersection = t[0].coords[0]
+                        except:
+                            intersection = t.coords[0]
+
+                        lineNew = LineString([row[index_geometry], Point(intersection)])
+
+                    else: lineNew = line
+
+                    list_lines.append(lineNew)
+                    i = i+1
+                    if i > 360: i = i - 360
+
+
+                list_points = [Point(origin)]
+                for i in list_lines: list_points.append(Point(i.coords[1]))
+                list_points.append(Point(origin))
+                poly = Polygon([[p.x, p.y] for p in list_points])
+                
+                visibility_polygons.loc[-1] = [row[index_nodeID], coming_from, poly] 
+                visibility_polygons.index = visibility_polygons.index + 1
+            
+        else:
+            start = 0.5
+            i = start
+            list_lines = []
+            
+            while(i <= 360):
+
+                coords = get_coord_angle(origin, distance = 200, angle = i)
+                line = LineString([row[index_geometry], Point(coords)])
+
+                obstacles = possible_obstacles[possible_obstacles.crosses(line)]
+                ob = cascaded_union(obstacles.geometry)
+
+                if len(obstacles > 0):
+                    t = line.intersection(ob)
+
+                    try:
+                        intersection = t[0].coords[0]
+                    except:
+                        intersection = t.coords[0]
+
+                    lineNew = LineString([row[index_geometry], Point(intersection)])
+
+                else: lineNew = line
+
+                list_lines.append(lineNew)
+                i = i+1
+
+            list_points = [Point(origin)]
+            for i in list_lines: list_points.append(Point(i.coords[1]))
+            list_points.append(Point(origin))
+            poly = Polygon([[p.x, p.y] for p in list_points])
+            
+            visibility_polygons.loc[-1] = [row[index_nodeID], poly] 
+            visibility_polygons.index = visibility_polygons.index + 1
+        
+    
+    visibility_polygons_gdf = gpd.GeoDataFrame(visibility_polygons.loc[:, visibility_polygons.columns != 'geometry'], 
+                                               crs=nodes_gdf.crs, geometry = visibility_polygons['geometry'])
+    return visibility_polygons_gdf
+    
+    
+
+def visibility_matrix(landmarks_gdf, visibility_polygons_gdf, nodes_gdf):
+    
+    columns = ['buildingID'] + nodes_gdf['nodeID'].astype(str).tolist()
+    visibility_matrix = pd.DataFrame(columns = columns)
+    visibility_matrix['buildingID'] = landmarks_gdf['buildingID']
+
+    index_buildingID = visibility_matrix.columns.get_loc("buildingID")+1  
+    index_polygon = visibility_polygons_gdf.columns.get_loc("geometry")+1  
+    index_nodeID = visibility_polygons_gdf.columns.get_loc("nodeID")+1  
+    sindex = visibility_polygons_gdf.sindex
+
+    for row in visibility_matrix.itertuples(): 
+
+        l_polygon = landmarks_gdf['geometry'][landmarks_gdf['buildingID'] == row[index_buildingID]].tolist()[0]
+        b = l_polygon.buffer(200)
+        possible_matches_index = list(sindex.intersection(b.bounds))
+        possible_matches = visibility_polygons_gdf.iloc[possible_matches_index]
+        precise_matches = possible_matches[possible_matches.intersects(b)]
+
+        for p in precise_matches.itertuples():
+            v_polygon = p[index_polygon]
+            column = str(p[index_nodeID])
+
+            if ((l_polygon.intersects(v_polygon)) | (l_polygon.touches(v_polygon))):
+                visibility_matrix.set_value(row[0], column, True)
+
+    visibility_matrix.fillna(value = False, inplace=True)
+    visibility_matrix = visibility_matrix.astype(int)
+    
+    return(visibility_matrix)
     

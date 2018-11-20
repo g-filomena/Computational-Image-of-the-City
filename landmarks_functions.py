@@ -16,7 +16,7 @@ from shapely.ops import cascaded_union, linemerge
 pd.set_option('precision', 10)
 from time import sleep
 import sys
-
+import utilities as uf
 """
 This set of functions is designed for extracting the computational image of the city,
 Nodes, paths and districts are extracted with street network analysis, employing the primal and the dual graph representations.
@@ -76,9 +76,7 @@ def structural_properties(buildings_gdf, obstructions, street_gdf):
         buildings_gdf.set_value(row[0], 'length', length)
         
         possible_matches_index = list(sindex.intersection(b200.bounds))
-        possible_matches = obstructions.iloc[possible_matches_index]
-        #precise matches not necessary here
-    
+        possible_matches = obstructions.iloc[possible_matches_index]   
         if(len(possible_matches_index) < 1): continue 
         
         possible_neigh_index = list(sindex.intersection(b150.bounds))
@@ -89,8 +87,6 @@ def structural_properties(buildings_gdf, obstructions, street_gdf):
         dist = g.distance(street_network)
         buildings_gdf.set_value(row[0], 'road', dist) #distance road
 
-        
-    buildings_gdf['ext'] = buildings_gdf.area #extension
     buildings_gdf['fac'] = buildings_gdf['height']*(buildings_gdf.width) #facade area
     buildings_gdf.drop(['width','length'], axis=1, inplace = True)
     
@@ -98,29 +94,37 @@ def structural_properties(buildings_gdf, obstructions, street_gdf):
 
 
 def visibility(buildings_gdf, sight_lines):
-
-    avg = (sight_lines[['buildingID', 'Shape_Leng']].groupby(['buildingID'], 
-                                            as_index=False)['Shape_Leng'].mean())
+    sight_lines = sight_lines.copy()
+    sight_lines.drop(['Shape_Leng'], axis = 1, inplace = True)
+    sight_lines['length'] = sight_lines['geometry'].length
+    sight_lines = (sight_lines[['buildingID', 'length', 'nodeID']].groupby(['buildingID', 'nodeID'], 
+                                            as_index = False)['length'].max())
     
-    avg.rename(columns={'Shape_Leng': 'mean_length'}, inplace=True)
+    avg = (sight_lines[['buildingID', 'length']].groupby(['buildingID'], 
+                                            as_index = False)['length'].mean())
+    avg.rename(columns={'length':'mean_length'}, inplace=True)
     
-    count =(sight_lines[['buildingID', 'Shape_Leng']].groupby(['buildingID'], 
-                                            as_index=False)['Shape_Leng'].count())
-    count.rename(columns={'Shape_Leng': 'n_lines'}, inplace=True)
+    count = (sight_lines[['buildingID', 'length']].groupby(['buildingID'], 
+                                            as_index=False)['length'].count())
+    count.rename(columns={'length':'n_slines'}, inplace=True)
 
     tmp = sight_lines.set_index('buildingID')
-    distant = tmp.groupby('buildingID').agg(lambda copy: copy.values[copy['Shape_Leng'].values.argmax()])
+    distant = tmp.groupby('buildingID').agg(lambda copy: copy.values[copy['length'].values.argmax()])
     distant = distant.reset_index()
 
-    visibility = pd.merge(distant, avg, left_on='buildingID', right_on='buildingID')
-    visibility.drop(['DIST_ALONG','Visibility', 'geometry'], axis=1, inplace=True)
-    visibility.rename(columns = {'Shape_Leng':'distance','mean_length':'mean_distance'}, inplace=True) 
+    visibility_tmp = pd.merge(distant, avg, left_on= 'buildingID', right_on = 'buildingID')
+    visibility = pd.merge(visibility_tmp, count, left_on= 'buildingID', right_on = 'buildingID')                    
+    visibility.drop(['DIST_ALONG', 'Visibility', 'geometry'], axis = 1, errors = 'ignore', inplace=True)
+    visibility.rename(columns = {'length':'dist','mean_length':'m_dist'}, inplace=True) 
     
-    tmp = pd.merge(buildings_gdf, visibility[['buildingID','distance', 'mean_distance']], on='buildingID', how='left')  
-    tmp['distance'].fillna((tmp['distance'].min()), inplace=True)
-    tmp['mean_distance'].fillna((tmp['mean_distance'].min()), inplace=True)
-    tmp.rename(columns={'distance': 'vis', 'mean_distance': 'mean_vis'}, inplace=True)
+    tmp = pd.merge(buildings_gdf, visibility[['buildingID', 'dist', 'm_dist', 'n_slines']], on = 'buildingID', how= 'left')  
+    tmp['dist'].fillna((tmp['dist'].min()), inplace = True)
+    tmp['m_dist'].fillna((tmp['m_dist'].min()), inplace=True)
+    tmp['n_slines'].fillna((tmp['n_slines'].min()), inplace=True)
     
+    col = ['dist', 'm_dist', 'n_slines']                     
+    for i in col: uf.scaling_columnDF(tmp, i)
+    tmp['vis'] = tmp['dist_sc']*0.5+tmp['m_dist_sc']*0.25+tmp['n_slines_sc']*0.25
     return tmp
 
 def cultural_meaning(buildings_gdf, cultural_elements, score = None):
@@ -240,21 +244,20 @@ def pragmatic_meaning(buildings_gdf):
         
 def compute_scores(buildings_gdf):
 
-    col = ['area', 'ext', 'fac', 'height', 'prag', '2dvis','cult', 'vis']
+    col = ['area', 'fac', 'height', 'prag', 'a_vis','cult']
     for i in col: uf.scaling_columnDF(buildings_gdf, i)
 
     col = ['neigh', 'road']
     for i in col: uf.scaling_columnDF(buildings_gdf, i, inverse = True)     
 
-    buildings_gdf['vScore']= (buildings_gdf['fac_sc']*30 + buildings_gdf['height_sc']*20 + buildings_gdf['vis_sc']*50)/100
-    buildings_gdf['sScore']= (buildings_gdf['ext_sc']*30 + buildings_gdf['neigh_sc']*20 + buildings_gdf['2dvis_sc']*30 
-                              + buildings_gdf['road_sc']*20)/100
+    buildings_gdf['vScore'] = buildings_gdf['fac_sc']*0.30 + buildings_gdf['height_sc']*0.20 + buildings_gdf['vis']*0.5
+    buildings_gdf['sScore'] = buildings_gdf['area_sc']*0.30 + buildings_gdf['neigh_sc']*0.20 + buildings_gdf['a_vis_sc']*0.30     +buildings_gdf['road_sc']*0.20
 
     col = ['vScore', 'sScore']
     for i in col: uf.scaling_columnDF(buildings_gdf, i)
 
-    buildings_gdf['gScore']=(buildings_gdf['vScore_sc']*50 + buildings_gdf['sScore_sc']*30 + buildings_gdf['cult_sc']*10 
-                       + buildings_gdf['prag_sc']*10)/100
+    buildings_gdf['gScore'] = (buildings_gdf['vScore_sc']*0.50 + buildings_gdf['sScore_sc']*0.30 + buildings_gdf['cult_sc']*0.10 
+                       + buildings_gdf['prag_sc']*0.10)
 
     uf.scaling_columnDF(buildings_gdf, 'gScore')
     
@@ -264,11 +267,12 @@ def compute_scores(buildings_gdf):
 
 def local_scores(landmarks_gdf, buffer_extension):
     
+    landmarks_gdf = landmarks_gdf.copy()
     spatial_index = landmarks_gdf.sindex
     index_geometry = landmarks_gdf.columns.get_loc("geometry")+1
     landmarks_gdf['lScore'] = 0.0
     
-    col = ['area', 'ext', 'fac', 'height', 'prag', '2dvis','cult', 'vis']
+    col = ['area', 'fac', 'height', 'prag', 'a_vis','cult', 'vis']
     col_inverse = ['neigh', 'road']
    
     for row in landmarks_gdf.itertuples():
@@ -282,26 +286,22 @@ def local_scores(landmarks_gdf, buffer_extension):
         for i in col: uf.scaling_columnDF(LL, i)
         for i in col_inverse: uf.scaling_columnDF(LL, i, inverse = True)
         
-        LL['vScore'] =  LL['fac_sc']*0.30 + LL['height_sc']*0.20 + LL['vis_sc']*0.5
-        LL['sScore'] =  LL['ext_sc']*0.30 + LL['neigh_sc']*0.20 + LL['2dvis_sc']*0.3 + LL['road_sc']*0.20
+        LL['vScore'] =  LL['fac_sc']*0.30 + LL['height_sc']*0.20 + LL['vis']*0.5
+        LL['sScore'] =  LL['area_sc']*0.30 + LL['neigh_sc']*0.20 + LL['a_vis_sc']*0.3 + LL['road_sc']*0.20
         LL['lScore'] =  LL['vScore_sc']*0.20 + LL['sScore_sc']*0.30 + LL['cult_sc']*0.10 + LL['prag_sc']*0.40
         
         localScore = float("{0:.3f}".format(LL['lScore'].loc[row[0]]))
         landmarks_gdf.set_value(row[0], 'lScore', localScore)
-        uf.scaling_columnDF(landmarks_gdf, 'lScore', inverse = False)
+    uf.scaling_columnDF(landmarks_gdf, 'lScore', inverse = False)
         
     return landmarks_gdf
 
 
-def decision_score(nodes_gdf, landmarks_gdf):
+def local_salience(nodes_gdf, landmarks_gdf):
     
-    # assigning a decision point score per each node
-    # each node get the score of the best local landmark
-
     spatial_index = landmarks_gdf.sindex
-    nodes_gdf['DE'] = 0.0
-    nodes_gdf['landmarks'] = 'None'
-    nodes_gdf['scores'] = 'None'
+    nodes_gdf['loc_land'] = 'None'
+    nodes_gdf['loc_scor'] = 'None'
     index_geometry = nodes_gdf.columns.get_loc("geometry")+1
 
     for row in nodes_gdf.itertuples():
@@ -313,24 +313,20 @@ def decision_score(nodes_gdf, landmarks_gdf):
         possible_matches = landmarks_gdf.iloc[possible_matches_index]
         precise_matches = possible_matches[possible_matches.intersects(b)]
         
-        if (len(precise_matches)==0): continue
+        if (len(precise_matches) == 0): continue
     
-        precise_matches = precise_matches.sort_values(by='lScore', ascending=False).reset_index()
-        score = float("{0:.3f}".format(precise_matches['lScore'].loc[0]))
-        nodes_gdf.set_value(row[0], 'DE', score)
-        precise_matches = precise_matches.round({'lScore':3})
+        precise_matches = precise_matches.sort_values(by = 'lScore_sc', ascending=False).reset_index()
+        precise_matches = precise_matches.round({'lScore_sc':3})
         
         list_local = precise_matches['buildingID'].tolist()
-        list_scores = precise_matches['lScore'].tolist()
-        nodes_gdf.set_value(row[0], 'landmarks', list_local)
-        nodes_gdf.set_value(row[0], 'scores', list_scores)
-        
-        uf.scaling_columnDF(nodes_gdf, 'DE', inverse = True)
+        list_scores = precise_matches['lScore_sc'].tolist()
+        nodes_gdf.set_value(row[0], 'loc_land', list_local)
+        nodes_gdf.set_value(row[0], 'loc_scor', list_scores)
     
     return nodes_gdf
 
 
-def distant_score(nodes_gdf, landmarks_gdf, sight_lines, smaller_area = False, all_nodes = None):
+def distant_landmarks(nodes_gdf, landmarks_gdf, sight_lines, smaller_area = False, all_nodes = None):
     
     # keeping relevant landmarks and the sight lines that point at them
     
@@ -345,38 +341,54 @@ def distant_score(nodes_gdf, landmarks_gdf, sight_lines, smaller_area = False, a
         node_gdf = nodes_merged
     
     relevant = landmarks_gdf[landmarks_gdf.gScore_sc > 0.5]
+    relevant = relevant.round({'gScore_sc':3})
     index_relevant = landmarks_gdf['buildingID'].values.astype(int) 
-    sightLine_to_relevant = sight_lines[sight_lines['buildingID'].isin(index_relevant)]
+    sightLines_to_relevant = sight_lines[sight_lines['buildingID'].isin(index_relevant)]
 
     # per each node, the sight lines to the relevant landmarks are extracted. 
     # The visibility score of each node is the sum of the score of the visible landmarks visible from it, regardless the direction
 
-    nodes_gdf['DD'] = 0.0
-    nodes_gdf['visible_landmarks'] = 'NA' 
+    nodes_gdf['dist_land'] = None
+    nodes_gdf['dist_scor'] = None
+    nodes_gdf['anchors'] = None
 
     index_nodeID = nodes_gdf.columns.get_loc("nodeID")+1
+    index_geometry = nodes_gdf.columns.get_loc("geometry")+1
     
+    sindex = relevant.sindex
     for row in nodes_gdf.itertuples():
-        sight_node = sightLine_to_relevant[sightLine_to_relevant['nodeID'] == row[index_nodeID]] 
+        sight_node = sightLines_to_relevant[sightLines_to_relevant['nodeID'] == row[index_nodeID]] 
         index_relevant_fromNode = list(sight_node['buildingID'].values.astype(int))
         relevant_fromNode = relevant[relevant['buildingID'].isin(index_relevant_fromNode)] 
+        relevant_fromNode.sort_values(by = 'gScore_sc', ascending = False, inplace = True)
+        if len(relevant_fromNode) > 0:
+            nodes_gdf.set_value(row[0], 'dist_land', relevant_fromNode['buildingID'].tolist())  
+            nodes_gdf.set_value(row[0], 'dist_scores',  relevant_fromNode['gScore_sc'].tolist())  
         
-        score = relevant_fromNode['gScore'].sum()
-        nodes_gdf.set_value(row[0], 'DD', score)   
-        nodes_gdf.set_value(row[0], 'visible_landmarks', list(relevant_fromNode['buildingID'].values.astype(int)))
-     
+        # anchors around the node (intended as a destination)
+        b = row[index_geometry].buffer(500)
+        possible_matches_index = list(sindex.intersection(b.bounds))
+        possible_matches = relevant.iloc[possible_matches_index]
+        precise_matches = possible_matches[possible_matches.intersects(b)]
+        if len(precise_matches) > 0:
+            precise_matches.sort_values(by = 'gScore_sc', ascending = False, inplace = True)
+            anchors = precise_matches.iloc[0:5] # first five rows of dataframe
+            nodes_gdf.set_value(row[0], 'anchors',  anchors['buildingID'].tolist())  
+        else: continue
+#         nodes_gdf.set_value(row[0], 'anchors_scores',  list(anchors['gScore'].values.astype(float)))    
+    
+    
     if smaller_area == True:
         nodes_gdf['nodeID'] = nodes_gdf['oldID']
         nodes_gdf.drop(['oldID'], axis = 1, inplace = True)
     
-    uf.scaling_columnDF(nodes_gdf, 'DD', inverse = True)
     return nodes_gdf 
 
 
 def advance_visibility_buildings(landmarks_gdf, obstructions_gdf):
     
     visibility_polygons = landmarks_gdf[['buildingID', 'geometry']].copy()
-    landmarks_gdf['2dvis'] = 0.0
+    landmarks_gdf['a_vis'] = 0.0
     
     sindex = obstructions_gdf.sindex
     index_geometry = landmarks_gdf.columns.get_loc("geometry")+1
@@ -439,7 +451,7 @@ def advance_visibility_buildings(landmarks_gdf, obstructions_gdf):
             poly_vis = pp.difference(row[index_geometry])
         
         
-        landmarks_gdf.set_value(row[0],'2dvis', poly_vis.area)
+        landmarks_gdf.set_value(row[0],'a_vis', poly_vis.area)
         
         try:
             if len(poly_vis) > 1: #MultiPolygon

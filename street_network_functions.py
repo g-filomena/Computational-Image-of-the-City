@@ -61,43 +61,43 @@ def isparallel(geolineA, geolineB, hard = False):
     angle = uf.ang_geoline(geolineA, geolineB, degree = True)
     if ((angle <= 20) | (angle >= 160)): return True
         
-    coordsA = list(geolineA.coords)
-    coordsB = list(geolineB.coords)
+    line_coordsA = list(geolineA.line_coords)
+    line_coordsB = list(geolineB.line_coords)
     
-    if ((len(coordsA) == 2) | (len(coordsB) == 2)): return False
+    if ((len(line_coordsA) == 2) | (len(line_coordsB) == 2)): return False
     
-    spA = Point(coordsA[0])
-    spB = Point(coordsB[0])
-    epB = Point(coordsB[-1])
-    if spA.distance(spB) > spA.distance(epB): coordsB.reverse()
+    spA = Point(line_coordsA[0])
+    spB = Point(line_coordsB[0])
+    epB = Point(line_coordsB[-1])
+    if spA.distance(spB) > spA.distance(epB): line_coordsB.reverse()
     
     if hard == False:
         # remove 1st coordinates (A,B)
-        geolineA = LineString([coor for coor in coordsA[1:]])
-        geolineB = LineString([coor for coor in coordsB[1:]])
+        geolineA = LineString([coor for coor in line_coordsA[1:]])
+        geolineB = LineString([coor for coor in line_coordsB[1:]])
         angle = uf.ang_geoline(geolineA, geolineB, degree = True)
         if ((angle <= 20) | (angle >= 160)): return True
         
         # remove 1st (A) and last (B)
-        geolineB = LineString([coor for coor in coordsB[:-1]])
+        geolineB = LineString([coor for coor in line_coordsB[:-1]])
         angle = uf.ang_geoline(geolineA, geolineB, degree = True)
         if ((angle <= 20) | (angle >= 160)): return True
         
         # remove last (A) and 1st (B)
-        geolineA = LineString([coor for coor in coordsA[:-1]])
-        geolineB = LineString([coor for coor in coordsB[1:]])
+        geolineA = LineString([coor for coor in line_coordsA[:-1]])
+        geolineB = LineString([coor for coor in line_coordsB[1:]])
         angle = uf.ang_geoline(geolineA, geolineB, degree = True)
         if ((angle <= 20) | (angle >= 160)): return True
         
         # remove last coordinates (A, B)
-        geolineA = LineString([coor for coor in coordsA[:-1]])
-        geolineB = LineString([coor for coor in coordsB[:-1]])
+        geolineA = LineString([coor for coor in line_coordsA[:-1]])
+        geolineB = LineString([coor for coor in line_coordsB[:-1]])
         angle = uf.ang_geoline(geolineA, geolineB, degree = True)
         if ((angle <= 20) | (angle >= 160)): return True
         
-        if ((len(coordsA) == 3) | (len(coordsB) == 3)): return False
-        geolineA = LineString([coor for coor in coordsA[1:-1]])
-        geolineB = LineString([coor for coor in coordsB[1:-1]])
+        if ((len(line_coordsA) == 3) | (len(line_coordsB) == 3)): return False
+        geolineA = LineString([coor for coor in line_coordsA[1:-1]])
+        geolineB = LineString([coor for coor in line_coordsB[1:-1]])
 
         angle = uf.ang_geoline(geolineA, geolineB, degree = True)
         if ((angle <= 20) | (angle >= 160)): return True
@@ -1558,7 +1558,7 @@ def get_dual_graph(nodes_dual, edges_dual, edge_costs):
 	
 # natural roads extraction: the function has to be called twice for each segment, to check in both directions
 
-def natural_roads(streetID, natural_id, direction, nodes_gdf, edges_gdf,): 
+def natural_roads(streetID, natural_id, direction, nodes_gdf, edges_gdf): 
     """
     This function takes a direction "to" or "from" and two geopandas dataframes, one for roads one for nodes (or junctions).
     The dataframes are supposed to be simplified and can be obtained via the functions "get_fromOSM(place)" or "get_fromSHP(directory, 
@@ -1584,12 +1584,12 @@ def natural_roads(streetID, natural_id, direction, nodes_gdf, edges_gdf,):
     directions_dict = {}
       
     index_geometry = edges_gdf.columns.get_loc("geometry")+1
-    index_u = edges_gdf.columns.get_loc("geometry")+1
-    index_v = edges_gdf.columns.get_loc("geometry")+1
+    index_u = edges_gdf.columns.get_loc("u")+1
+    index_v = edges_gdf.columns.get_loc("v")+1
     
     to_node = edges_gdf.loc[streetID]['u']
     from_node = edges_gdf.loc[streetID]['v']
-    geo = edges_gdf.loc[streetID]['v']
+    geo = edges_gdf.loc[streetID]['geometry']
     
         
     #assuming nodeID = ID dataframe
@@ -1599,7 +1599,7 @@ def natural_roads(streetID, natural_id, direction, nodes_gdf, edges_gdf,):
     y_f = float("{0:.10f}".format(nodes_gdf.loc[from_node]['y']))
       
     #continue from the to_node     
-    if (direction == "to"): intersecting = edges_gdf[(roads_gdf['u'] == to_node) | (edges_gdf['v'] == to_node)]
+    if (direction == "to"): intersecting = edges_gdf[(edges_gdf['u'] == to_node) | (edges_gdf['v'] == to_node)]
     
     #continue from the from_node
     else: intersecting = edges_gdf[(edges_gdf['u'] == from_node) | (edges_gdf['v'] == from_node)]
@@ -1609,9 +1609,9 @@ def natural_roads(streetID, natural_id, direction, nodes_gdf, edges_gdf,):
     for row_F in intersecting.itertuples():
         if ((streetID == row_F[0]) | (row_F[-1] != 'NA')): continue
         
-        to_node_F = row_F[edges_gdf.columns.get_loc("u")]
-        from_node_F = row_F[edges_gdf.columns.get_loc("v")]
-        geo_F = row_F[edges_gdf.columns.get_loc("v")]
+        to_node_F = row_F[index_u]
+        from_node_F = row_F[index_v]
+        geo_F = row_F[index_geometry]
 
 
         if (to_node == to_node_F): towards = "fr"
@@ -1633,7 +1633,7 @@ def natural_roads(streetID, natural_id, direction, nodes_gdf, edges_gdf,):
     else:
         angles_sorted = sorted(angles, key = angles.get)
         matchID = angles_sorted[0]
-        edges_gdf.set_value(id_road, 'natural_id', natural_id)
+        edges_gdf.set_value(streetID, 'natural_id', natural_id)
         natural_roads(matchID, natural_id, directions_dict[matchID], nodes_gdf, edges_gdf)
 
     

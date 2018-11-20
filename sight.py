@@ -10,7 +10,7 @@ city_name = 'London'
 load_folder = "C:/Users/g_filo01/sciebo/Scripts/Image of the City/Outputs/"+city_name
 aprx = arcpy.mp.ArcGISProject("CURRENT")
 
-buildings = env+"/"+city_name+"_buildings_sight.shp"
+buildings = env+"/"+city_name+"_missing.shp"
 obstructions = env+"/"+city_name+"_obstructions.shp"
 
 arcpy.MakeFeatureLayer_management(obstructions, "o_layer").getOutput(0)
@@ -23,16 +23,16 @@ arcpy.AddZInformation_3d("o_layer3d", 'Z_MAX', 'NO_FILTER')
 arcpy.Layer3DToFeatureClass_3d("o_layer3d", city_name+"_multiPatch", None, "ENABLE_COLORS_AND_TEXTURES").getOutput(0)
 
 height_observer = "height"
-heigth_buildings = "r_height"
+heigth_buildings = "height"
 direction = "NOT_OUTPUT_THE_DIRECTION"
-observer_points =  env+"/"+city_name+"_nodes_cleaned_CCZ.shp"
+observer_points =  load_folder+"/"+city_name+"_nodes.shp"
 
 
 
 geoDB = "C:/Users/g_filo01/sciebo/Scripts/ArcGis/GeoDB.gdb"
-arcpy.FeatureClassToGeodatabase_conversion(city_name+"_multiPatch", geoDB)
+# arcpy.FeatureClassToGeodatabase_conversion(city_name+"_multiPatch", geoDB)
 obstructions = geoDB+"/"+city_name+"_multiPatch"
-sightlines_file = geoDB+"/"+city_name+"_sightlines"
+sightlines_file = geoDB+"/"+city_name+"_sightlines_m"
 arcpy.ddd.ConstructSightLines(observer_points, buildings, sightlines_file, height_observer, heigth_buildings, None, 30, direction)
 
 with arcpy.da.UpdateCursor(sightlines_file, 'SHAPE@LENGTH') as cursor:

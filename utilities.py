@@ -24,29 +24,28 @@ pd.set_option('precision', 10)
 ## Plot
 	
     
-def plot_edges(edges_gdf, to_compare = None):
-    f, ax = plt.subplots(1, figsize=(15, 15))
-    ax.set_axis_off()
-    edges_gdf.plot(ax=ax, linewidth = 0.75, color = 'black')
+def plot_lines(gdf, classes = 7, lw = 0.9, column = None, title = 'Plot', scheme = 'fisher_jenks', cmap = 'Greys_r', fcolor = 'white', legend = False, black_back = True, compare = None):
     
-    if to_compare != None:
-        to_compare.plot(ax=ax, linewidth = 0.75, color = 'red')    
+    
+    if column != None: gdf.sort_values(by = column, ascending = True, inplace = True)    
+    f, ax = plt.subplots(1, figsize=(10, 10), facecolor = fcolor)
+    if black_back == True: tcolor = 'white'
+    else: tcolor = 'black'
+    rect = f.patch    
+    if black_back == True: rect.set_facecolor('black')
+    else: rect.set_facecolor('white')
 
-def plot_edges(edges_gdf, classes = 7, lw = 0.9, column = None, title = 'Plot', scheme = 'fisher_jenks', cmap = 'Greys_r', black_back = True, legend = False, compare = None):
-    
-    
-    if column != None: edges_gdf.sort_values(by = column, ascending = True, inplace = True)
-    f, ax = plt.subplots(1, figsize=(15, 15))
-    if black_back == True: plt.rcParams['figure.facecolor'] = 'black'
-    else: plt.rcParams['figure.facecolor'] = 'white'
+    f.suptitle(title, color = tcolor) 
     plt.axis('equal')
     ax.set_axis_off()
-
     
-    if scheme == "LynchBreaks":
+    if (column != None) & (scheme == None):
+        gdf.plot(ax = ax, column = column, linewidth = lw, legend = legend) 
+    
+    elif scheme == "LynchBreaks":
         bins = [0.12, 0.25, 0.50, 0.75, 1.00]
-        cl = ps.User_Defined(edges_gdf[column], bins)
-        edges_gdf.assign(cl = cl.yb).plot(ax = ax, column= 'cl', categorical = True, k = 5, cmap = cmap, linewidth = lw, legend=True)
+        cl = ps.User_Defined(gdf[column], bins)
+        gdf.assign(cl = cl.yb).plot(ax = ax, column= 'cl', categorical = True, k = 5, cmap = cmap, linewidth = lw, legend=True)
     
         leg = ax.get_legend()
         leg.set_bbox_to_anchor((0., 0., 0.2, 0.2))
@@ -57,43 +56,94 @@ def plot_edges(edges_gdf, classes = 7, lw = 0.9, column = None, title = 'Plot', 
         leg.get_texts()[4].set_text('0.75 - 1.00')
     
     elif scheme != None:
-        edges_gdf.plot(ax = ax, column = column, k = classes, cmap = cmap, linewidth = lw, scheme = scheme, legend = legend)
-        sm = plt.cm.ScalarMappable(cmap = cmap, norm = plt.Normalize(vmin = edges_gdf[column].min(), vmax = edges_gdf[column].max()))
+        gdf.plot(ax = ax, column = column, k = classes, cmap = cmap, linewidth = lw, scheme = scheme, legend = legend)
+        sm = plt.cm.ScalarMappable(cmap = cmap, norm = plt.Normalize(vmin = gdf[column].min(), vmax = gdf[column].max()))
         if legend == True:
             leg = ax.get_legend()  
             leg.get_frame().set_linewidth(0.0)
         
-        sm._A = []
-        f.colorbar(sm)
+#         sm._A = []
+#         cb=plt.colorbar()
+#         f.colorbar(sm)
         
     else:
-        edges_gdf.plot(ax = ax, linewidth = lw, color = 'black')
+        gdf.plot(ax = ax, linewidth = lw, color = 'black')
         if compare != None: compare.plot(ax = ax, linewidth = 1, color = 'red')  
-        if black_back == True: plt.rcParams['figure.facecolor'] = 'black'
-        else: plt.rcParams['figure.facecolor'] = 'white'
     
-    f.suptitle(title)    
+     
     plt.show()
 
+def plot_lines_aside(gdf, classes = 7, lw = 0.9, column = None, column_a = None, title = 'Plot', scheme = 'fisher_jenks', cmap = 'Greys_r', fcolor = 'white', legend = False, black_back = True):
+        
+    if column != None: gdf.sort_values(by = column, ascending = True, inplace = True)    
+    if column_a != None: gdf.sort_values(by = column, ascending = True, inplace = True)
+    f, (ax1, ax2) = plt.subplots(ncols = 2, figsize=(15, 15), sharex=True, sharey=True, facecolor = fcolor)
+    if black_back == True: tcolor = 'white'
+    else: tcolor = 'black'
+    rect = f.patch    
+    if black_back == True: rect.set_facecolor('black')
+    else: rect.set_facecolor('white') 
+        
+    f.suptitle(title, color = tcolor) 
+    plt.axis('equal')
+    ax1.set_axis_off()
+    ax2.set_axis_off()
     
-   
+    col = [column, column_a]
+    for n,i in enumerate([ax1, ax2]):
+        if (col[n] != None) & (scheme == None):
+            gdf.plot(ax = i, column = col[n], linewidth = lw, legend = legend) 
+
+        elif scheme == "LynchBreaks":
+            bins = [0.12, 0.25, 0.50, 0.75, 1.00]
+            cl = ps.User_Defined(gdf[col[n]], bins)
+            gdf.assign(cl = cl.yb).plot(ax = i, column= 'cl', categorical = True, k = 5, cmap = cmap, linewidth = lw, legend=True)
+
+            leg = ax.get_legend()
+            leg.set_bbox_to_anchor((0., 0., 0.2, 0.2))
+            leg.get_texts()[0].set_text('0.00 - 0.12')
+            leg.get_texts()[1].set_text('0.12 - 0.25')
+            leg.get_texts()[2].set_text('0.25 - 0.50')
+            leg.get_texts()[3].set_text('0.50 - 0.75')
+            leg.get_texts()[4].set_text('0.75 - 1.00')
+
+        elif scheme != None:
+            gdf.plot(ax = i, column = col[n], k = classes, cmap = cmap, linewidth = lw, scheme = scheme, legend = legend)
+            sm = plt.cm.ScalarMappable(cmap = cmap, norm = plt.Normalize(vmin = gdf[col[n]].min(), vmax = gdf[col[n]].max()))
+            if legend == True:
+                leg = i.get_legend()  
+                leg.get_frame().set_linewidth(0.0)
+
+    #         sm._A = []
+    #         cb=plt.colorbar()
+    #         f.colorbar(sm)
+
+        else:
+            gdf.plot(ax = i, linewidth = lw, color = 'black')    
+     
+    plt.show()
     
     
+    
+        
 def plot_polygons(gdf, classes = 7, column = None, title = 'Plot', scheme = None, cmap = 'Greens_r', black_back = True, legend = False):
     
     f, ax = plt.subplots(1, figsize=(10,10))
     ax.set_axis_off()
     plt.axis('equal')
-    if black_back == True: plt.rcParams['figure.facecolor'] = 'black'
-    else: plt.rcParams['figure.facecolor'] = 'white'
     
+    if black_back == True: tcolor = 'white'
+    else: tcolor = 'black'
+    rect = f.patch    
+    if black_back == True: rect.set_facecolor('black')
+    else: rect.set_facecolor('white')
     
     if (column != None) & (scheme == None):
         gdf.plot(ax = ax, column = column)    
     
     elif scheme == "LynchBreaks":
         bins = [0.12, 0.25, 0.50, 0.75, 1.00]
-        cl = ps.User_Defined(edges_gdf[column], bins)
+        cl = ps.User_Defined(gdf[column], bins)
         gdf.assign(cl = cl.yb).plot(ax = ax, column= 'cl', categorical = True, k = 5, cmap = cmap, legend=True)
     
         leg = ax.get_legend()
@@ -111,8 +161,7 @@ def plot_polygons(gdf, classes = 7, column = None, title = 'Plot', scheme = None
             leg = ax.get_legend()  
             leg.get_frame().set_linewidth(0.0)    
     else: gdf.plot(ax = ax, color = 'orange')
-    f.suptitle(title)  
-
+    f.suptitle(title, color = tcolor)  
     plt.show()    
     
 def scaling_columnDF(df, i, inverse = False):

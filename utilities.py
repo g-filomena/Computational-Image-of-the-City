@@ -77,7 +77,7 @@ def plot_lines_aside(gdf, classes = 7, lw = 0.9, column = None, column_a = None,
         
     if column != None: gdf.sort_values(by = column, ascending = True, inplace = True)    
     if column_a != None: gdf.sort_values(by = column, ascending = True, inplace = True)
-    f, (ax1, ax2) = plt.subplots(ncols = 2, figsize=(15, 15), sharex=True, sharey=True, facecolor = fcolor)
+    f, (ax1, ax2) = plt.subplots(ncols = 2, figsize=(15, 8), facecolor = fcolor)
     if black_back == True: tcolor = 'white'
     else: tcolor = 'black'
     rect = f.patch    
@@ -86,11 +86,12 @@ def plot_lines_aside(gdf, classes = 7, lw = 0.9, column = None, column_a = None,
         
     f.suptitle(title, color = tcolor) 
     plt.axis('equal')
-    ax1.set_axis_off()
     ax2.set_axis_off()
-    
+    ax1.set_axis_off()
+        
     col = [column, column_a]
-    for n,i in enumerate([ax1, ax2]):
+    for n, i in enumerate([ax1, ax2]):
+        i.set_aspect('equal')
         if (col[n] != None) & (scheme == None):
             gdf.plot(ax = i, column = col[n], linewidth = lw, legend = legend) 
 
@@ -99,13 +100,14 @@ def plot_lines_aside(gdf, classes = 7, lw = 0.9, column = None, column_a = None,
             cl = ps.User_Defined(gdf[col[n]], bins)
             gdf.assign(cl = cl.yb).plot(ax = i, column= 'cl', categorical = True, k = 5, cmap = cmap, linewidth = lw, legend=True)
 
-            leg = ax.get_legend()
+            leg = i.get_legend()
             leg.set_bbox_to_anchor((0., 0., 0.2, 0.2))
             leg.get_texts()[0].set_text('0.00 - 0.12')
             leg.get_texts()[1].set_text('0.12 - 0.25')
             leg.get_texts()[2].set_text('0.25 - 0.50')
             leg.get_texts()[3].set_text('0.50 - 0.75')
             leg.get_texts()[4].set_text('0.75 - 1.00')
+            i.legend(loc=1)
 
         elif scheme != None:
             gdf.plot(ax = i, column = col[n], k = classes, cmap = cmap, linewidth = lw, scheme = scheme, legend = legend)
@@ -113,6 +115,7 @@ def plot_lines_aside(gdf, classes = 7, lw = 0.9, column = None, column_a = None,
             if legend == True:
                 leg = i.get_legend()  
                 leg.get_frame().set_linewidth(0.0)
+                leg.set_bbox_to_anchor((0.0, 0.0, 0.2, 0.2))
 
     #         sm._A = []
     #         cb=plt.colorbar()
@@ -120,7 +123,10 @@ def plot_lines_aside(gdf, classes = 7, lw = 0.9, column = None, column_a = None,
 
         else:
             gdf.plot(ax = i, linewidth = lw, color = 'black')    
-     
+    
+#     ax1.legend(loc="upper right")
+#     ax2.legend(loc="upper right")
+    plt.axis('equal')
     plt.show()
     
     

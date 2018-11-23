@@ -80,7 +80,7 @@ def get_fromOSM(type_download, place, network_type, epsg, distance = 7000):
     edges_gdf = edges[['geometry', 'length', 'osmid', 'u','v', 'highway','key', 'oneway', 'maxspeed','name']]
     
     # getting rid of OSMid and preparing geodataframes
-    edges_gdf = edges_gdf.rename(columns = {'u':'old_u', 'v':'old_v})
+    edges_gdf = edges_gdf.rename(columns = {'u':'old_u', 'v':'old_v'})
     nodes_gdf = nodes_gdf.reset_index(drop=True)
     nodes_gdf['old_nodeID'] = nodes_gdf.osmid.astype('int64')
     nodes_gdf['nodeID'] = nodes_gdf.index.values.astype(int)
@@ -145,7 +145,8 @@ def get_fromSHP(directory, epsg, crs, area = None, roadType_field = None, direct
     streets['to'] = "NaN"
     
     # creating the dataframes
-    for n, i in enumerate(columns): if (i is not None): streets_gdf[new_columns[n]] = streets_gdf[i]
+    for n, i in enumerate(columns): 
+        if (i is not None): streets_gdf[new_columns[n]] = streets_gdf[i]
      
     standard_columns = ['geometry', 'from', 'to']
     streets_gdf = streets_gdf[standard_columns + [new_columns[n] for n, i in enumerate(columns) if i is not None]]
@@ -821,19 +822,19 @@ def natural_roads(streetID, naturalID, direction, nodes_gdf, edges_gdf):
             angles[row_F[0]] = deflection # dictionary with streetID and angle
             directions_dict[row_F[0]] = towards # dictionary with streetID and direction
     
-   # No natural continuations
-   if (len(angles) == 0): 
-      edges_gdf.set_value(row[0], 'naturalID', naturalID)
-      return
+    # No natural continuations
+    if (len(angles) == 0):
+        edges_gdf.set_value(row[0], 'naturalID', naturalID)
+        return
    
-   # selecting the best continuation and continuing in its direction
-   else:
-       angles_sorted = sorted(angles, key = angles.get) 
+    # selecting the best continuation and continuing in its direction
+    else:
+        angles_sorted = sorted(angles, key = angles.get) 
                                             
-       # taking the streetID of the segment which form the gentlest angle with the segment examined
-       matchID = angles_sorted[0] 
-       edges_gdf.set_value(row[0], 'naturalID', naturalID)
-       natural_roads(matchID, natural_id, directions_dict[matchID], nodes_gdf, edges_gdf)                    
+        # taking the streetID of the segment which form the gentlest angle with the segment examined
+        matchID = angles_sorted[0] 
+        edges_gdf.set_value(row[0], 'naturalID', naturalID)
+        natural_roads(matchID, natural_id, directions_dict[matchID], nodes_gdf, edges_gdf)                    
                                                                                     
 def run_natural_roads(nodes_gdf, edges_gdf): 
     """
@@ -857,10 +858,10 @@ def run_natural_roads(nodes_gdf, edges_gdf):
     nodes_gdf.index = nodes_gdf.nodeID
     naturalID = 1  
     
-    for row in edges.itertuples():
+    for row in edges_gdf.itertuples():
         if (row[index_nID] > 0): continue # if already assigned to a natural road
-        snf.natural_roads(row[0], naturalID, "fr", nodes, edges) 
-        snf.natural_roads(row[0], naturalID, "to", nodes, edges) 
+        snf.natural_roads(row[0], naturalID, "fr", nodes_gdf, edges_gdf) 
+        snf.natural_roads(row[0], naturalID, "to", nodes_gdf, edges_gdf) 
         naturalID = naturalID + 1
                                             
     return(nodes_gdf, streets_gdf)
@@ -910,7 +911,7 @@ def straightness_centrality(G, weight, normalized = True):
 
     return straightness_centrality
 
-def weight_nodes(nodes_gdf,  points_gdf, G, buffer, name)
+def weight_nodes(nodes_gdf,  points_gdf, G, buffer, name):
     
     """
     Given a nodes and a services/points geodataframes, the function assign an attribute to nodes in the graph G (prevously derived from 
@@ -944,7 +945,7 @@ def weight_nodes(nodes_gdf,  points_gdf, G, buffer, name)
     for n in G.nodes():
         G.node[n][name] = nodes_gdf[name].loc[n]
     
-return G
+    return G
 
 def reach_centrality(G, weight, radius, attribute):
     """

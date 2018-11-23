@@ -16,23 +16,52 @@ from shapely.ops import cascaded_union, linemerge
 pd.set_option('precision', 10)
 
 """
-
+Series of utilies for plotting LineString, Points or Polygons geodataframes, and other operations.
 
 """
 
-# utilities
 ## Plot
 	
     
-def plot_lines(gdf, classes = 7, lw = 0.9, column = None, title = 'Plot', scheme = 'fisher_jenks', cmap = 'Greys_r', fcolor = 'white', legend = False, black_back = True, compare = None):
+def plot_points(gdf, column, classes = 7, ms = 0.9, ms_col = None, title = 'Plot', scheme = 'fisher_jenks', cmap = 'Greys_r', legend = False, bb = True, f = 10):
     
+    gdf.sort_values(by = column, ascending = True, inplace = True)    
+    f, ax = plt.subplots(1, figsize=(f, f))
     
-    if column != None: gdf.sort_values(by = column, ascending = True, inplace = True)    
-    f, ax = plt.subplots(1, figsize=(10, 10), facecolor = fcolor)
-    if black_back == True: tcolor = 'white'
+    # background black or white
+    if bb == True: tcolor = 'white'
     else: tcolor = 'black'
     rect = f.patch    
-    if black_back == True: rect.set_facecolor('black')
+    if bb == True: rect.set_facecolor('black')
+    else: rect.set_facecolor('white')
+    
+    f.suptitle(title, color = tcolor) 
+    plt.axis('equal')
+    ax.set_axis_off()
+    if (ms_col != None): ms = gdf[ms_col]
+
+    if scheme != None:
+        gdf.plot(ax = ax, column = column, k = classes, cmap = cmap, s = ms, scheme = scheme, legend = legend)
+        sm = plt.cm.ScalarMappable(cmap = cmap, norm = plt.Normalize(vmin = gdf[column].min(), vmax = gdf[column].max()))
+        if legend == True:
+            leg = ax.get_legend()  
+            leg.get_frame().set_linewidth(0.0)
+                
+    else: gdf.plot(ax = ax, linewidth = lw, color = 'black')
+
+    plt.show()
+    
+    
+    
+    
+def plot_lines(gdf, classes = 7, lw = 0.9, column = None, title = 'Plot', scheme = None, cmap = 'Greys_r', legend = False, bb = True, f=10):
+    
+    if column != None: gdf.sort_values(by = column, ascending = True, inplace = True)    
+    f, ax = plt.subplots(1, figsize=(f, f))
+    if bb == True: tcolor = 'white'
+    else: tcolor = 'black'
+    rect = f.patch    
+    if bb == True: rect.set_facecolor('black')
     else: rect.set_facecolor('white')
 
     f.suptitle(title, color = tcolor) 
@@ -40,7 +69,7 @@ def plot_lines(gdf, classes = 7, lw = 0.9, column = None, title = 'Plot', scheme
     ax.set_axis_off()
     
     if (column != None) & (scheme == None):
-        gdf.plot(ax = ax, column = column, linewidth = lw, legend = legend) 
+        gdf.plot(ax = ax, column = column, cmap = cmap, linewidth = lw, legend = legend) 
     
     elif scheme == "LynchBreaks":
         bins = [0.12, 0.25, 0.50, 0.75, 1.00]
@@ -66,9 +95,7 @@ def plot_lines(gdf, classes = 7, lw = 0.9, column = None, title = 'Plot', scheme
 #         cb=plt.colorbar()
 #         f.colorbar(sm)
         
-    else:
-        gdf.plot(ax = ax, linewidth = lw, color = 'black')
-        if compare != None: compare.plot(ax = ax, linewidth = 1, color = 'red')  
+    else: gdf.plot(ax = ax, linewidth = lw, color = 'black')
     
      
     plt.show()

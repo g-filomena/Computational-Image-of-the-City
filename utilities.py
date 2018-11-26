@@ -1,13 +1,17 @@
-import osmnx as ox, networkx as nx, matplotlib.cm as cm, pandas as pd, numpy as np
+import osmnx as ox, networkx as nx, matplotlib as mp, pandas as pd, numpy as np
 import geopandas as gpd
 import functools
 import community
 import math
 import matplotlib.pyplot as plt
+import matplotlib.cm as cm
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 from scipy import sparse
 from scipy.sparse import linalg
 import pysal as ps
+import random
+import pylab
 
 from shapely.geometry import Point, LineString, Polygon, MultiPolygon, mapping, MultiLineString
 from math import sqrt
@@ -39,15 +43,18 @@ def plot_points(gdf, column, classes = 7, ms = 0.9, ms_col = None, title = 'Plot
     plt.axis('equal')
     ax.set_axis_off()
     if (ms_col != None): ms = gdf[ms_col]
+        
+    if scheme == "LynchBreaks":
+        bins = [0.12, 0.25, 0.50, 0.75, 1.00]
+        cl = ps.User_Defined(gdf[column], bins)
+        gdf.assign(cl = cl.yb).plot(ax = ax, column= 'cl', categorical = True, k = 5, cmap = cmap, linewidth = lw, legend=True)
 
-    if scheme != None:
-        gdf.plot(ax = ax, column = column, k = classes, cmap = cmap, s = ms, scheme = scheme, legend = legend)
-        sm = plt.cm.ScalarMappable(cmap = cmap, norm = plt.Normalize(vmin = gdf[column].min(), vmax = gdf[column].max()))
-        if legend == True:
-            leg = ax.get_legend()  
-            leg.get_frame().set_linewidth(0.0)
-                
+    elif scheme != None: gdf.plot(ax = ax, column = column, k = classes, cmap = cmap, s = ms, scheme = scheme, legend = legend)
     else: gdf.plot(ax = ax, linewidth = lw, color = 'black')
+        
+    if legend == True:
+        leg = ax.get_legend()  
+        leg.get_frame().set_linewidth(0.0)     
 
     plt.show()
     
@@ -60,24 +67,29 @@ def plot_lines(gdf, classes = 7, lw = 0.9, column = None, title = 'Plot', scheme
     f, ax = plt.subplots(1, figsize=(f, f))
     if bb == True: tcolor = 'white'
     else: tcolor = 'black'
-    rect = f.patch    
+    rect = f.patch  
+    rect.set_zorder(0)
     if bb == True: rect.set_facecolor('black')
     else: rect.set_facecolor('white')
+        
 
     f.suptitle(title, color = tcolor) 
     plt.axis('equal')
     ax.set_axis_off()
     
     if (column != None) & (scheme == None):
-        gdf.plot(ax = ax, column = column, cmap = cmap, linewidth = lw, legend = legend) 
-    
+        if cmap == None: 
+            colors = {1:'white', 0: 'black'}
+            colors = ['white', 'black']
+            gdf.plot(ax = ax, categorical = True, column = column, color = colors, linewidth = lw, legend = legend) 
+        else: gdf.plot(ax = ax, column = column, cmap = cmap, linewidth = lw, legend = legend) 
+
     elif scheme == "LynchBreaks":
         bins = [0.12, 0.25, 0.50, 0.75, 1.00]
         cl = ps.User_Defined(gdf[column], bins)
         gdf.assign(cl = cl.yb).plot(ax = ax, column= 'cl', categorical = True, k = 5, cmap = cmap, linewidth = lw, legend=True)
     
         leg = ax.get_legend()
-        leg.set_bbox_to_anchor((0., 0., 0.2, 0.2))
         leg.get_texts()[0].set_text('0.00 - 0.12')
         leg.get_texts()[1].set_text('0.12 - 0.25')
         leg.get_texts()[2].set_text('0.25 - 0.50')
@@ -86,29 +98,35 @@ def plot_lines(gdf, classes = 7, lw = 0.9, column = None, title = 'Plot', scheme
     
     elif scheme != None:
         gdf.plot(ax = ax, column = column, k = classes, cmap = cmap, linewidth = lw, scheme = scheme, legend = legend)
-        sm = plt.cm.ScalarMappable(cmap = cmap, norm = plt.Normalize(vmin = gdf[column].min(), vmax = gdf[column].max()))
-        if legend == True:
-            leg = ax.get_legend()  
-            leg.get_frame().set_linewidth(0.0)
+#         sm = plt.cm.ScalarMappable(cmap = cmap, norm = plt.Normalize(vmin = gdf[column].min(), vmax = gdf[column].max()))
+    else: gdf.plot(ax = ax, linewidth = lw, color = 'black')
+                      
+    if legend == True:
+        leg = ax.get_legend()
+        leg.set_zorder(102)
+        if bb == True:
+            for text in leg.get_texts(): text.set_color("white")
+        leg.set_bbox_to_anchor((0., 0., 0.2, 0.2))
+        leg.get_frame().set_linewidth(0.0)
+
+       
         
 #         sm._A = []
 #         cb=plt.colorbar()
 #         f.colorbar(sm)
-        
-    else: gdf.plot(ax = ax, linewidth = lw, color = 'black')
     
      
     plt.show()
 
-def plot_lines_aside(gdf, classes = 7, lw = 0.9, column = None, column_a = None, title = 'Plot', scheme = 'fisher_jenks', cmap = 'Greys_r', fcolor = 'white', legend = False, black_back = True):
+def plot_lines_aside(gdf, classes = 7, lw = 0.9, column = None, column_a = None, title = 'Plot', scheme = 'fisher_jenks', cmap = 'Greys_r', fcolor = 'white', legend = False, bb = True):
         
     if column != None: gdf.sort_values(by = column, ascending = True, inplace = True)    
     if column_a != None: gdf.sort_values(by = column, ascending = True, inplace = True)
     f, (ax1, ax2) = plt.subplots(ncols = 2, figsize=(15, 8), facecolor = fcolor)
-    if black_back == True: tcolor = 'white'
+    if bb == True: tcolor = 'white'
     else: tcolor = 'black'
     rect = f.patch    
-    if black_back == True: rect.set_facecolor('black')
+    if bb == True: rect.set_facecolor('black')
     else: rect.set_facecolor('white') 
         
     f.suptitle(title, color = tcolor) 
@@ -119,8 +137,7 @@ def plot_lines_aside(gdf, classes = 7, lw = 0.9, column = None, column_a = None,
     col = [column, column_a]
     for n, i in enumerate([ax1, ax2]):
         i.set_aspect('equal')
-        if (col[n] != None) & (scheme == None):
-            gdf.plot(ax = i, column = col[n], linewidth = lw, legend = legend) 
+        if (col[n] != None) & (scheme == None): gdf.plot(ax = i, column = col[n], linewidth = lw, legend = legend) 
 
         elif scheme == "LynchBreaks":
             bins = [0.12, 0.25, 0.50, 0.75, 1.00]
@@ -138,41 +155,52 @@ def plot_lines_aside(gdf, classes = 7, lw = 0.9, column = None, column_a = None,
 
         elif scheme != None:
             gdf.plot(ax = i, column = col[n], k = classes, cmap = cmap, linewidth = lw, scheme = scheme, legend = legend)
-            sm = plt.cm.ScalarMappable(cmap = cmap, norm = plt.Normalize(vmin = gdf[col[n]].min(), vmax = gdf[col[n]].max()))
-            if legend == True:
-                leg = i.get_legend()  
-                leg.get_frame().set_linewidth(0.0)
-                leg.set_bbox_to_anchor((0.0, 0.0, 0.2, 0.2))
-
-    #         sm._A = []
-    #         cb=plt.colorbar()
-    #         f.colorbar(sm)
 
         else:
             gdf.plot(ax = i, linewidth = lw, color = 'black')    
     
-#     ax1.legend(loc="upper right")
-#     ax2.legend(loc="upper right")
+        if legend == True:
+            leg = i.get_legend()
+            leg.set_zorder(102)
+            if bb == True:
+                for text in leg.get_texts(): text.set_color("white")
+            leg.set_bbox_to_anchor((0., 0., 0.2, 0.2))
+            leg.get_frame().set_linewidth(0.0)
+            
+#         sm._A = []
+#         cb=plt.colorbar()
+        f.colorbar(sm)
+            
     plt.axis('equal')
     plt.show()
     
     
     
         
-def plot_polygons(gdf, classes = 7, column = None, title = 'Plot', scheme = None, cmap = 'Greens_r', black_back = True, legend = False):
+def plot_polygons(gdf, classes = 7, column = None, title = 'Plot', scheme = None, cmap = 'Greens_r', bb = True, legend = False, cb = False, f = 10):
     
-    f, ax = plt.subplots(1, figsize=(10,10))
+    fig, ax = plt.subplots(1, figsize=(f, f))
     ax.set_axis_off()
     plt.axis('equal')
     
-    if black_back == True: tcolor = 'white'
+    if bb == True: tcolor = 'white'
     else: tcolor = 'black'
-    rect = f.patch    
-    if black_back == True: rect.set_facecolor('black')
+    rect = fig.patch    
+    if bb == True: rect.set_facecolor('black')
     else: rect.set_facecolor('white')
+        
+    fs = f+5
     
-    if (column != None) & (scheme == None):
-        gdf.plot(ax = ax, column = column)    
+    if (column != None) & (scheme == None): gdf.plot(ax = ax, column = column, cmap = cmap, categorical = True, legend = legend)    
+
+#         n=(len(gdf[column].unique()))+1
+#         cm = pylab.get_cmap('nipy_spectral')
+#         cgen = list(cm(1.*i/n) for i in range(n))
+#         random.shuffle(cgen)
+#         c = {}
+#         for n,i in enumerate(gdf[column].unique()): c[i] = cgen[n]
+#         colors = list(gdf[column].apply(lambda x: c[x]))
+
     
     elif scheme == "LynchBreaks":
         bins = [0.12, 0.25, 0.50, 0.75, 1.00]
@@ -188,13 +216,25 @@ def plot_polygons(gdf, classes = 7, column = None, title = 'Plot', scheme = None
         leg.get_texts()[4].set_text('0.75 - 1.00')    
     
     elif scheme != None:
+        if cb == True: legend = False
         gdf.plot(ax = ax, column = column, k = classes, cmap = cmap,  scheme = scheme, legend = legend)
         sm = plt.cm.ScalarMappable(cmap = cmap, norm = plt.Normalize(vmin = gdf[column].min(), vmax = gdf[column].max()))
         if legend == True:
             leg = ax.get_legend()  
-            leg.get_frame().set_linewidth(0.0)    
+            leg.get_frame().set_linewidth(0.0) 
+            
     else: gdf.plot(ax = ax, color = 'orange')
-    f.suptitle(title, color = tcolor)  
+    
+    if cb == True:
+        fig = ax.get_figure()
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("right", size="5%", pad=0.05)
+        sm._A = []
+        cbar = fig.colorbar(sm, cax=cax, ticks=[gdf[column].min(), gdf[column].max()]) 
+        cbar.ax.set_yticklabels(['min', 'max'])
+        plt.setp(plt.getp(cbar.ax.axes, 'yticklabels'), color=tcolor, fontsize=(fs-5))   
+        
+    fig.suptitle(title, color = tcolor, fontsize=fs)
     plt.show()    
     
 def scaling_columnDF(df, i, inverse = False):

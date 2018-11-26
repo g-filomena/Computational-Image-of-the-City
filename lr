@@ -1,0 +1,285 @@
+def local_salience(nodes_gdf, landmarks_gdf):
+        """
+    The function simply resets the indexes of the two dataframes without losing the relative links
+     
+    Parameters
+    ----------
+    nodes_gdf, edges_gdf: GeoDataFrames, nodes and street segments
+   
+    Returns
+    -------
+    GeoDataFrames
+    """
+    
+    spatial_index = landmarks_gdf.sindex
+    nodes_gdf['loc_land'] = 'None'
+    nodes_gdf['loc_scor'] = 'None'
+    index_geometry = nodes_gdf.columns.get_loc("geometry")+1
+
+    for row in nodes_gdf.itertuples():
+       
+        g = row[index_geometry] #geometry
+        b = g.buffer(50)    
+        
+        possible_matches_index = list(spatial_index.intersection(b.bounds))
+        possible_matches = landmarks_gdf.iloc[possible_matches_index]
+        precise_matches = possible_matches[possible_matches.intersects(b)]
+        
+        if (len(precise_matches) == 0): continue
+    
+        precise_matches = precise_matches.sort_values(by = 'lScore_sc', ascending=False).reset_index()
+        precise_matches = precise_matches.round({'lScore_sc':3})
+        
+        list_local = precise_matches['buildingID'].tolist()
+        list_scores = precise_matches['lScore_sc'].tolist()
+        nodes_gdf.set_value(row[0], 'loc_land', list_local)
+        nodes_gdf.set_value(row[0], 'loc_scor', list_scores)
+    
+    return nodes_gdf
+
+
+def distant_landmarks(nodes_gdf, landmarks_gdf, sight_lines, smaller_area = False, all_nodes = None):
+    
+    # keeping relevant landmarks and the sight lines that point at them
+    
+    if smaller_area == True:
+        nodes_gdf['oldID'] = nodes_gdf['nodeID']
+        nodes_gdf['coordinates'] = nodes_gdf[['x', 'y']].apply(tuple, axis=1)
+        all_nodes['coordinates'] = all_nodes[['x', 'y']].apply(tuple, axis=1)
+        nodes_merged = pd.merge(nodes_gdf, all_nodes[['nodeID','coordinates']], left_on = 'coordinates', right_on = 'coordinates', 
+                                how = 'left')
+        nodes_merged['nodeID'] = nodes_merged['nodeID_y'] 
+        nodes_merged.drop(['nodeID_x', 'nodeID_y', 'coordinates'], axis = 1, inplace = True)
+        node_gdf = nodes_merged
+    
+    relevant = landmarks_gdf[landmarks_gdf.gScore_sc > 0.5]
+    relevant = relevant.round({'gScore_sc':3})
+    index_relevant = landmarks_gdf['buildingID'].values.astype(int) 
+    sightLines_to_relevant = sight_lines[sight_lines['buildingID'].isin(index_relevant)]
+
+    # per each node, the sight lines to the relevant landmarks are extracted. 
+    # The visibility score of each node is the sum of the score of the visible landmarks visible from it, regardless the direction
+
+    nodes_gdf['dist_land'] = None
+    nodes_gdf['dist_scor'] = None
+    nodes_gdf['anchors'] = None
+
+    index_nodeID = nodes_gdf.columns.get_loc("nodeID")+1
+    index_geometry = nodes_gdf.columns.get_loc("geometry")+1
+    
+    sindex = relevant.sindex
+    for row in nodes_gdf.itertuples():
+        sight_node = sightLines_to_relevant[sightLines_to_relevant['nodeID'] == row[index_nodeID]] 
+        index_relevant_fromNode = list(sight_node['buildingID'].values.astype(int))
+        relevant_fromNode = relevant[relevant['buildingID'].isin(index_relevant_fromNode)] 
+        relevant_fromNode.sort_values(by = 'gScore_sc', ascending = False, inplace = True)
+        if len(relevant_fromNode) > 0:
+            nodes_gdf.set_value(row[0], 'dist_land', relevant_fromNode['buildingID'].tolist())  
+            nodes_gdf.set_value(row[0], 'dist_scores',  relevant_fromNode['gScore_sc'].tolist())  
+        
+        # anchors around the node (intended as a destination)
+        b = row[index_geometry].buffer(500)
+        possible_matches_index = list(sindex.intersection(b.bounds))
+        possible_matches = relevant.iloc[possible_matches_index]
+        precise_matches = possible_matches[possible_matches.intersects(b)]
+        if len(precise_matches) > 0:
+            precise_matches.sort_values(by = 'gScore_sc', ascending = False, inplace = True)
+            anchors = precise_matches.iloc[0:5] # first five rows of dataframe
+            nodes_gdf.set_value(row[0], 'anchors',  anchors['buildingID'].tolist())  
+        else: continue
+#         nodes_gdf.set_value(row[0], 'anchors_scores',  list(anchors['gScore'].values.astype(float)))    
+    
+    
+    if smaller_area == True:
+        nodes_gdf['nodeID'] = nodes_gdf['oldID']
+        nodes_gdf.drop(['oldID'], axis = 1, inplace = True)
+    
+    return nodes_gdf 
+
+
+
+
+def advance_visibility_nodes(nodes_gdf, edges_gdf, landmarks_gdf, field_view = True):
+    
+    visibility_polygons = pd.DataFrame(columns = ['nodeID', 'geometry'])
+    if field_view == True: visibility_polygons = pd.DataFrame(columns = ['nodeID', 'from_Node', 'geometry'])
+    
+    degree_field_view = 140
+    index_x = nodes_gdf.columns.get_loc("x")+1 
+    index_y = nodes_gdf.columns.get_loc("y")+1 
+    index_nodeID = nodes_gdf.columns.get_loc("nodeID")+1 
+    index_geometry = nodes_gdf.columns.get_loc("geometry")+1 
+    
+    index_v = edges_gdf.columns.get_loc("v")+1 
+    index_u = edges_gdf.columns.get_loc("u")+1 
+    
+    to_sub = (360-degree_field_view)/2
+    sindex = landmarks_gdf.sindex
+    coming_from = 0
+    counter = 0
+    
+    for row in nodes_gdf.itertuples():
+        sys.stdout.write('\r')
+        sys.stdout.write("progress: "+str(int(counter/len(nodes_gdf)*100))+" %")
+        sys.stdout.flush()
+        sleep(0.25)
+        counter += 1
+        
+        origin = (float("{0:.10f}".format(row[index_x])), float("{0:.10f}".format(row[index_y])))
+        
+        possible_obstacles_index = list(sindex.intersection(row[index_geometry].buffer(220).bounds))
+        possible_obstacles = landmarks_gdf.iloc[possible_obstacles_index]
+        
+        if field_view == True:
+                
+            segments = edges_gdf[(edges_gdf['v'] == row[index_nodeID]) | (edges_gdf['u'] == row[index_nodeID])]
+            zeroCoord = uf.get_coord_angle(origin, distance = 200, angle = 0.5)
+            
+            for s in segments.itertuples():
+
+                if s[index_v] == row[index_nodeID]:     # take ndode u
+                    otherCoord = (nodes_gdf.x[nodes_gdf['nodeID'] == s[index_u]].tolist()[0], 
+                           nodes_gdf.y[nodes_gdf['nodeID'] == s[index_u]].tolist()[0])
+                    coming_from = s[index_u]
+
+                else: #takes node v
+                    otherCoord = (nodes_gdf.x[nodes_gdf['nodeID'] ==  s[index_v]].tolist()[0], 
+                           nodes_gdf.y[nodes_gdf['nodeID'] == s[index_v]].tolist()[0])
+                    coming_from = s[index_v]
+
+                line0 = ((origin), (zeroCoord))
+                lineB = ((origin), (otherCoord))
+
+                if otherCoord[0] > origin[0]: # east
+
+                    diff = uf.ang(line0, lineB)
+                    start = diff+to_sub
+                    end = start+degree_field_view
+                    if end >360: end = end-360
+
+                else: # west
+                    diff = 180-uf.ang(line0, lineB)
+                    start = 180+diff+to_sub
+                    if start > 360: start = start-360
+
+                    end = start+degree_field_view 
+                    if end > 360: end = end-360
+
+                first_lineCoord = uf.get_coord_angle(origin, distance = 200, angle = start)
+                last_lineCoord = uf.get_coord_angle(origin, distance = 200, angle = end)
+
+                first_line = LineString([row[index_geometry], Point(first_lineCoord)])
+                last_line = LineString([row[index_geometry], Point(last_lineCoord)])
+
+
+                i = start
+                list_lines = []
+
+                while (((end > start) & ((i <= end) & (i >= start))) |
+                       ((end < start) & (((i >= start) & (i > end)) | ((i < start) & (i <= end))))):
+
+                    coords = uf.get_coord_angle(origin, distance = 200, angle = i)
+                    line = LineString([row[index_geometry], Point(coords)])
+
+                    obstacles = possible_obstacles[possible_obstacles.crosses(line)]
+                    ob = cascaded_union(obstacles.geometry)
+
+                    if len(obstacles > 0):
+                        t = line.intersection(ob)
+
+                        try:
+                            intersection = t[0].coords[0]
+                        except:
+                            intersection = t.coords[0]
+
+                        lineNew = LineString([row[index_geometry], Point(intersection)])
+
+                    else: lineNew = line
+
+                    list_lines.append(lineNew)
+                    i = i+1
+                    if i > 360: i = i - 360
+
+
+                list_points = [Point(origin)]
+                for i in list_lines: list_points.append(Point(i.coords[1]))
+                list_points.append(Point(origin))
+                poly = Polygon([[p.x, p.y] for p in list_points])
+                
+                visibility_polygons.loc[-1] = [row[index_nodeID], coming_from, poly] 
+                visibility_polygons.index = visibility_polygons.index + 1
+            
+        else:
+            start = 0.5
+            i = start
+            list_lines = []
+            
+            while(i <= 360):
+
+                coords = uf.get_coord_angle(origin, distance = 200, angle = i)
+                line = LineString([row[index_geometry], Point(coords)])
+
+                obstacles = possible_obstacles[possible_obstacles.crosses(line)]
+                ob = cascaded_union(obstacles.geometry)
+
+                if len(obstacles > 0):
+                    t = line.intersection(ob)
+
+                    try:
+                        intersection = t[0].coords[0]
+                    except:
+                        intersection = t.coords[0]
+
+                    lineNew = LineString([row[index_geometry], Point(intersection)])
+
+                else: lineNew = line
+
+                list_lines.append(lineNew)
+                i = i+1
+
+            list_points = [Point(origin)]
+            for i in list_lines: list_points.append(Point(i.coords[1]))
+            list_points.append(Point(origin))
+            poly = Polygon([[p.x, p.y] for p in list_points])
+            
+            visibility_polygons.loc[-1] = [row[index_nodeID], poly] 
+            visibility_polygons.index = visibility_polygons.index + 1
+        
+    
+    visibility_polygons_gdf = gpd.GeoDataFrame(visibility_polygons.loc[:, visibility_polygons.columns != 'geometry'], 
+                                               crs = nodes_gdf.crs, geometry = visibility_polygons['geometry'])
+    return visibility_polygons_gdf
+    
+    
+
+def visibility_matrix(landmarks_gdf, visibility_polygons_gdf, nodes_gdf):
+    
+    columns = ['buildingID'] + nodes_gdf['nodeID'].astype(str).tolist()
+    visibility_matrix = pd.DataFrame(columns = columns)
+    visibility_matrix['buildingID'] = landmarks_gdf['buildingID']
+
+    index_buildingID = visibility_matrix.columns.get_loc("buildingID")+1  
+    index_polygon = visibility_polygons_gdf.columns.get_loc("geometry")+1  
+    index_nodeID = visibility_polygons_gdf.columns.get_loc("nodeID")+1  
+    sindex = visibility_polygons_gdf.sindex
+
+    for row in visibility_matrix.itertuples(): 
+
+        l_polygon = landmarks_gdf['geometry'][landmarks_gdf['buildingID'] == row[index_buildingID]].tolist()[0]
+        b = l_polygon.buffer(200)
+        possible_matches_index = list(sindex.intersection(b.bounds))
+        possible_matches = visibility_polygons_gdf.iloc[possible_matches_index]
+        precise_matches = possible_matches[possible_matches.intersects(b)]
+
+        for p in precise_matches.itertuples():
+            v_polygon = p[index_polygon]
+            column = str(p[index_nodeID])
+
+            if ((l_polygon.intersects(v_polygon)) | (l_polygon.touches(v_polygon))):
+                visibility_matrix.set_value(row[0], column, True)
+
+    visibility_matrix.fillna(value = False, inplace=True)
+    visibility_matrix = visibility_matrix.astype(int)
+    
+    return(visibility_matrix)
+    

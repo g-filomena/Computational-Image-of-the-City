@@ -18,11 +18,10 @@ pd.set_option('precision', 10)
 import utilities as uf
 
 """
-This set of functions is designed for extracting the computational image of the city,
+This set of functions is designed for extracting the computational Image of The City.
 Nodes, paths and districts are extracted with street network analysis, employing the primal and the dual graph representations.
-Landmarks are extracted via a salience assessment process.
-
 While the use of the terms "nodes" and "edges" can be cause confusion between the graph component and the Lynch components, nodes and edges are here used instead of vertexes and links to be consistent with NetworkX definitions.
+(See notebook '1_Nodes_paths_districts.ipynb' for usages and pipeline).
 
 """
 
@@ -328,7 +327,7 @@ def nodes_simplified(edges_gdf):
 
 def edges_simplified(edges_gdf):
     """
-    The function checks the presence of possible duplicate geometries in the edges_gdf geodataframe.
+    The function checks the presence of possible duplicate geometries in the edges_gdf GDF.
      
     Parameters
     ----------
@@ -487,7 +486,7 @@ def clean_network(nodes_gdf, edges_gdf, dead_ends = False):
         for key, value in dd.items():
             tmp = edges_gdf[edges_gdf.code == key].copy()
             
-            # sorting the temporary gdf by length, the shortest is then used as a term of comparison
+            # sorting the temporary GDF by length, the shortest is then used as a term of comparison
             tmp.sort_values(['length'], ascending = True, inplace = True)
             u, v, geo_line, index_line = tmp.iloc[0]['u'], tmp.iloc[0]['v'], tmp.iloc[0]['geometry'], tmp.iloc[0].name 
             

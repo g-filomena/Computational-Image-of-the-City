@@ -1,22 +1,18 @@
-import osmnx as ox, networkx as nx, matplotlib as mp, pandas as pd, numpy as np
-import geopandas as gpd
+import matplotlib as mp, pandas as pd, numpy as np, geopandas as gpd
 import functools
-import community
 import math
+from math import sqrt
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
-from mpl_toolkits.axes_grid1 import make_axes_locatable
-
-from scipy import sparse
-from scipy.sparse import linalg
 import pysal as ps
 import random
 import pylab
 
-from shapely.geometry import Point, LineString, Polygon, MultiPolygon, mapping, MultiLineString
-from math import sqrt
-import pandas as pd
-from shapely.ops import cascaded_union, linemerge
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+from shapely.geometry import Point, LineString, MultiLineString
+
+from scipy import sparse
+from scipy.sparse import linalg
 pd.set_option('precision', 10)
 
 """
@@ -24,7 +20,7 @@ Series of utilies for plotting LineString, Points or Polygons geodataframes, and
 
 """
 
-## Plot
+## Plotting
 	
     
 def plot_points(gdf, column, classes = 7, ms = 0.9, ms_col = None, title = 'Plot', scheme = 'fisher_jenks', cmap = 'Greys_r', legend = False, bb = True, f = 10):
@@ -57,8 +53,6 @@ def plot_points(gdf, column, classes = 7, ms = 0.9, ms_col = None, title = 'Plot
         leg.get_frame().set_linewidth(0.0)     
 
     plt.show()
-    
-    
     
     
 def plot_lines(gdf, classes = 7, lw = 0.9, column = None, title = 'Plot', scheme = None, cmap = 'Greys_r', legend = False, bb = True, f=10):
@@ -111,9 +105,6 @@ def plot_lines(gdf, classes = 7, lw = 0.9, column = None, title = 'Plot', scheme
 
        
         
-#         sm._A = []
-#         cb=plt.colorbar()
-#         f.colorbar(sm)
     
      
     plt.show()
@@ -256,8 +247,11 @@ def dict_to_df(list_dict, list_col):
     take a list of dictionary and merge them in a df,
     
     Parameters
-    list_dict: list of dictionaries that will become df columns
+    list_dict: list of dictionaries that will become df's columns
     list_col: list of the names that will be used as colums heading
+    
+    Returns:
+    DataFrame
     ----------
     """
     
@@ -266,6 +260,13 @@ def dict_to_df(list_dict, list_col):
     df.columns = list_col
     
     return(df)
+
+	
+# Angle/math functions
+	
+def euclidean_distance(xs, ys, xt, yt):
+    """ xs stands for x source and xt for x target """
+    return sqrt((xs - xt)**2 + (ys - yt)**2)
 
 # math functions for angle computations
 # from Abhinav Ramakrishnan answer in https://stackoverflow.com/a/28261304/7375309
@@ -295,6 +296,15 @@ def ang(lineA, lineB, degree = True):
 
     if degree == True: return angle_deg
     else: return angle_rad
+
+
+def get_coord_angle(origin, distance, angle):
+
+    # calculate offsets with light trig
+    (disp_x, disp_y) = (distance * math.sin(math.radians(angle)),
+                        distance * math.cos(math.radians(angle)))
+
+    return (origin[0] + disp_x, origin[1] + disp_y)
 
 def ang_geoline(geolineA, geolineB, degree = False):
 
@@ -351,24 +361,6 @@ def ang_geoline(geolineA, geolineB, degree = False):
         
     if degree == True: return angle_deg
     else: return angle_rad
-        
-
-def euclidean_distance(xs, ys, xt, yt):
-    """ xs stands for x source and xt for x target """
-    return sqrt((xs - xt)**2 + (ys - yt)**2)
-	
-# preparation functions
-	
-# landmarks
-
-
-def get_coord_angle(origin, distance, angle):
-
-    # calculate offsets with light trig
-    (disp_x, disp_y) = (distance * math.sin(math.radians(angle)),
-                        distance * math.cos(math.radians(angle)))
-
-    return (origin[0] + disp_x, origin[1] + disp_y)
 
 
 

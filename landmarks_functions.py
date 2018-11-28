@@ -32,10 +32,10 @@ def select_buildings(city_buildings, area_to_clip, height_field, base_field = No
     osmid are indeed heavy and confusing.
         
     Parameters
+    ----------
     city_buildings, area_to_clip: GeoDataFrames
     height_field, base_field: strings height and base fields name in the original data-source
     area_obstructions: GeoDataFrame
-    ----------
     
     Returns
     -------
@@ -180,10 +180,10 @@ def advance_visibility(buildings_gdf, obstructions_gdf, radius = 500):
             obstacles = possible_obstacles[possible_obstacles.crosses(line)]
             ob = cascaded_union(obstacles.geometry)
             
-            '''
+            """"
             if there are obstacles: indentify where the line from the origin is interrupted, create the geometry and
             append it to the list of lines
-            '''
+            """"
             if len(obstacles > 0):
                 t = line.intersection(ob)
                 
@@ -217,10 +217,10 @@ def advance_visibility(buildings_gdf, obstructions_gdf, radius = 500):
             poly_vis = pp.difference(row[index_geometry])      
         buildings_gdf.set_value(row[0],'a_vis', poly_vis.area)
         
-        ''' 
+        """"
         !! it does not work always - saving the polygon in a GDF containing visibility polygons. 
         It may create irregular multi part polygons.
-        '''
+        """"
         try:
             if len(poly_vis) > 1: #MultiPolygon
                 for i in range(0, len(poly_vis)): 

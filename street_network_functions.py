@@ -36,6 +36,7 @@ def get_fromOSM(type_download, place, network_type, epsg, distance = 7000):
     osmid are indeed heavy and confusing.
         
     Parameters
+    ----------
     type_download: string, {shapefilePolygon', 'OSMpolygon', 'distance_from_address', 'shapefilePolygon'}
     place: string, name of cities or areas in OSM
     network_type: string,  {'walk', 'bike', 'drive', 'drive_service', 'all', 'all_private', 'none'}
@@ -43,8 +44,7 @@ def get_fromOSM(type_download, place, network_type, epsg, distance = 7000):
     epsg: int
     distance: float, only yse if type_download = 'distance from address'
     project: boolean
-    ----------
-    
+        
     Returns
     -------
     GeoDataFrames
@@ -428,6 +428,7 @@ def clean_network(nodes_gdf, edges_gdf, dead_ends = False):
     """
     It calls a series of functions (see above) to clean and remove dubplicate geometries or possible parallel short edges.
     It moreover removes pseudo-nodes and, optionally, dead ends.
+    
     Parameters
     ----------
     nodes_gdf, edges_gdf: GeoDataFrames, nodes and street segments
@@ -741,9 +742,9 @@ def get_dual_graph(nodes_dual, edges_dual, edge_costs):
 
 def dual_id_dict(dict_values, G, nodeAttribute):
     """
-    It could be used when one deals with a dual graph and wants to reconnect some analysis conducted on this representation to the analysis
-    conducted on the primal graph. For instance, it takes the dictionary containing the betweennes-centrality values of the nodes in the
-    dual graph, and associates these features to the corresponding edgeID (nodes in dual graph represent real edges).
+    It could be used when one deals with a dual graph and wants to reconnect some analysis conducted on this representation to the
+    analysis conducted on the primal graph. For instance, it takes the dictionary containing the betweennes-centrality values of the
+    nodes in the dual graph, and associates these features to the corresponding edgeID (nodes in dual graph represent real edges).
     
     Parameters
     ----------
@@ -959,7 +960,8 @@ def reach_centrality(G, weight, radius, attribute):
     G: networkx multigraph
     weight: string, edges weight
     radius: float, distance from node within looking for other reachable nodes
-    attribute: string, node attribute used to compute reach centralily. It indicates the importance of the node (e.g. number of services in     50mt buffer)
+    attribute: string, node attribute used to compute reach centralily. It indicates the importance of the node 
+    (e.g. number of services in 50mt buffer)
     
     Returns
     -------

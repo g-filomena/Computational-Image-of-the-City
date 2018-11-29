@@ -5,7 +5,7 @@
 In this repository a set of functions to extract the Image of the City "[The Image of The City, Lynch, K., 1960. The Image Of The City, Cambridge, MA: MIT Press](https://mitpress.mit.edu/books/image-city)." from open and freely available geospatialdatasets is presented.
 
 The tool is written in Python and rely on a series of libraries, as [Geopandas](http://geopandas.org), [OSMNx](https://osmnx.readthedocs.io/en/stable/), and relative dependencies.
-The functions are divided in three scripts, accordingly to their purpose:
+The functions are divided in three scripts, accordingly to their purposes:
 * street_network_functions.py
 * landmarks_functions.py
 * utilities.py 

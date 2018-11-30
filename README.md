@@ -1,6 +1,7 @@
 # The Computational Image of the City
 
 **A tool for extracting the Computational Image of the City from geospatial datasets**
+[![DOI](https://zenodo.org/badge/130851801.svg)](https://zenodo.org/badge/latestdoi/130851801)
 
 <img src="image_of_the_city_boston.jpg" alt="Image of the City (© The MIT Press)" />
 

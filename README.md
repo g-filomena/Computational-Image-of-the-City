@@ -4,7 +4,15 @@
 
 <img src="image_of_the_city_boston.jpg" alt="Image of the City (© The MIT Press)" />
 
+<<<<<<< HEAD
 ## Introduction
+=======
+The tool is written in Python and rely on a series of libraries, as [Geopandas](http://geopandas.org), [OSMNx](https://osmnx.readthedocs.io/en/stable/), and relative dependencies.
+The functions are divided in three scripts, accordingly to their purposes:
+* street_network_functions.py
+* landmarks_functions.py
+* utilities.py 
+>>>>>>> 94caa80a6d2aa209767137594d5b8999cf05d77e
 
 This repository provides a set of functions to extract salient urban features in line with the definitions laid down by Kevin Lynch in [The Image of The City](https://mitpress.mit.edu/books/image-city) using open and freely available geospatial datasets.
 

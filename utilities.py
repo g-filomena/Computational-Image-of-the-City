@@ -131,7 +131,7 @@ def plot_lines(gdf, column = None, classes = 7, lw = 1.1, title = 'Plot', scheme
     # categorigal variable
     if (column != None) & (scheme == None):
         if cmap == None: # boolean map
-            colors = ['white', 'red']
+            colors = ['white', 'black']
             gdf.plot(ax = ax, categorical = True, column = column, color = colors, linewidth = lw, legend = legend) 
         else: gdf.plot(ax = ax, column = column, cmap = cmap, linewidth = lw, legend = legend) # cateogircal map
     
@@ -297,12 +297,13 @@ def plot_lines_aside(gdf, classes = 7, lw = 0.9, column = None, column_a = None,
         else: gdf.plot(ax = i, linewidth = lw, color = 'black')  # plain map     
     
         if legend == True:
-            i.legend(loc=1)
+#             i.legend(loc=1)
             leg = i.get_legend()
+            leg.set_bbox_to_anchor((0., 0., 0.2, 0.2))
             leg.set_zorder(102)
 #             leg.get_frame().set_linewidth(0.0) # remove legend border
-#             if bb == True:
-#                 for text in leg.get_texts(): text.set_color("white")
+            if bb == True:
+                for text in leg.get_texts(): text.set_color("white")
 
     plt.show()
     
@@ -443,6 +444,78 @@ def ang_geoline(geolineA, geolineB, degree = False):
     except:
         angle_deg = 0
         angle_rad = 0
+        
+    if degree == True: return angle_deg
+    else: return angle_rad
+    
+def ang_geoline_n(geolineA, geolineB, degree = False):
+    
+    """
+    Given two LineStrings it computes the deflection angle between them. Returns value in degrees or radians.
+    
+    ----------
+    Parameters
+    geolineA, geolineB: LineString geometries
+    degree: Boolean
+    
+    Returns:
+    ----------
+    float
+    """
+    
+    # extracting coordinates and creates lines
+    coordsA = list(geolineA.coords)
+    coordsB = list(geolineB.coords)   
+
+    x_fA = float("{0:.10f}".format(coordsA[0][0]))
+    y_fA = float("{0:.10f}".format(coordsA[0][1]))
+    x_tA = float("{0:.10f}".format(coordsA[-1][0]))
+    y_tA = float("{0:.10f}".format(coordsA[-1][1]))
+    
+    x_fB = float("{0:.10f}".format(coordsB[0][0]))
+    y_fB = float("{0:.10f}".format(coordsB[0][1]))
+    x_tB = float("{0:.10f}".format(coordsB[-1][0]))
+    y_tB = float("{0:.10f}".format(coordsB[-1][1]))
+    
+    if ((x_tA, y_tA) == (x_tB, y_tB)):
+        lineA = ((x_tA,y_tA), (x_fA, y_fA))
+        lineB = ((x_tB, y_tB),(x_fB, y_fB))
+
+    elif ((x_tA, y_tA) == (x_fB, y_fB)):
+        lineA = ((x_tA,y_tA), (x_fA, y_fA))
+        lineB = ((x_tB, y_tB),(x_fB, y_fB))
+
+    elif ((x_fA, y_fA) == (x_fB, y_fB)):
+        lineA = ((x_fA,y_fA),(x_tA, y_tA))
+        lineB = ((x_fB, y_fB),(x_tB, y_tB))
+
+    else: #(from_node == to_node2)
+        lineA = ((x_fA,y_fA),(x_tA, y_tA))
+        lineB = ((x_tB, y_tB),(x_fB, y_fB))
+    
+    
+    # Get nicer vector form
+    vA = [(lineA[0][0]-lineA[1][0]), (lineA[0][1]-lineA[1][1])]
+    vB = [(lineB[0][0]-lineB[1][0]), (lineB[0][1]-lineB[1][1])]
+    
+    try:
+        # Get dot prod
+        dot_prod = dot(vA, vB)
+        # Get magnitudes
+        magA = dot(vA, vA)**0.5
+        magB = dot(vB, vB)**0.5
+        # Get cosine value
+        cos_ = dot_prod/magA/magB
+        # Get angle in radians and then convert to degrees
+        angle_rad = math.acos(dot_prod/magB/magA)
+        # Basically doing angle <- angle mod 360
+        angle_deg = math.degrees(angle_rad)%360
+#         if angle_deg-180 >= 0: angle_deg = 360 - angle_deg
+    except:
+        angle_deg = 0
+        angle_rad = 0
+    
+
         
     if degree == True: return angle_deg
     else: return angle_rad

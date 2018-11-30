@@ -77,17 +77,17 @@ for i in range(1,cycles):
 				cursor.deleteRow()
 	
 # merging the file created above
-arcpy.Merge_management(to_merge, geoDB+"/"+city_name+"_visibile_sl")
-visible_sl =  geoDB+"/"+city_name+"_visibile_sl"
+arcpy.Merge_management(to_merge, geoDB+"/"+city_name+"_sight_lines")
+sight_lines =  geoDB+"/"+city_name+"_sight_lines"
 
 # assigning nodeID-buildingID to the relative rows
-arcpy.JoinField_management(visible_sl, "OID_OBSERV", observer_points, "FID", "nodeID")
-arcpy.JoinField_management(visible_sl, "OID_TARGET", buildings, "FID", "buildingID")
-arcpy.DeleteField_management(visible_sl, ["OID_OBSERV", "OID_TARGET"])
+arcpy.JoinField_management(sight_lines, "OID_OBSERV", observer_points, "FID", "nodeID")
+arcpy.JoinField_management(sight_lines, "OID_TARGET", buildings, "FID", "buildingID")
+arcpy.DeleteField_management(sight_lines, ["OID_OBSERV", "OID_TARGET"])
 
 # saving 
 output = "C:/Users/g_filo01/sciebo/Scripts/Image of the City/Outputs/"+city_name
-arcpy.FeatureClassToShapefile_conversion(visible_sl, output)
+arcpy.FeatureClassToShapefile_conversion(sight_lines, output)
 
 # deleting temporary files
 for i in to_merge:

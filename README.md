@@ -2,7 +2,7 @@
 
 **A tool for extracting the Computational Image of the City from geospatial datasets**
 
-<img src=".image_of_the_city_boston.jpg" alt="Image of the City (© The MIT Press)" />
+<img src="image_of_the_city_boston.jpg" alt="Image of the City (© The MIT Press)" />
 
 ## Introduction
 

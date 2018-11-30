@@ -1,5 +1,5 @@
 # The Computational Image of the City 
-[![DOI](https://zenodo.org/badge/130851801.svg)](https://zenodo.org/badge/latestdoi/130851801)
+[![DOI](https://zenodo.org/badge/1744866.svg)](https://zenodo.org/badge/latestdoi/1744866)
 
 **A tool for extracting the Computational Image of the City from geospatial datasets**
 

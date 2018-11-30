@@ -20,5 +20,5 @@ The functions are divided in three scripts, each contributing methods for extrac
 * **[landmarks_functions.py](landmarks_functions.py)** - which allows for extraction of landmarks. Note that this function relies on ArcGIS functions, provided in [sight_lines.py](sight_lines.py) for computation of 3D sight lines.
 * **[utilities.py](utilities.py)** - which contains a variety of functions for handling and plotting data.
 
-The pipeline and the usage of the functions are detailed in the Jupyter notebooks **1_Nodes_ paths_districts.ipynb** and **2_Landmarks.ipynb**.
+The pipeline and the usage of the functions are detailed in the Jupyter notebooks **[1_Nodes_paths_districts.ipynb](1_Nodes_paths_districts.ipynb)** and **[2_Landmarks.ipynb](2_Landmarks.ipynb)**.
 

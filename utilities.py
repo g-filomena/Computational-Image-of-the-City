@@ -378,7 +378,7 @@ def get_coord_angle(origin, distance, angle):
 
     return (origin[0] + disp_x, origin[1] + disp_y)
 
-def ang_geoline(geolineA, geolineB, degree = False):
+def ang_geoline(geolineA, geolineB, degree = False, deflection = False):
     
     """
     Given two LineStrings it computes the deflection angle between them. Returns value in degrees or radians.
@@ -387,6 +387,7 @@ def ang_geoline(geolineA, geolineB, degree = False):
     Parameters
     geolineA, geolineB: LineString geometries
     degree: Boolean
+    deflection: Boolean, if true computes angle of incidence, otherwise angle formed by the two vectors as diverging from the common node.
     
     Returns:
     ----------
@@ -407,22 +408,38 @@ def ang_geoline(geolineA, geolineB, degree = False):
     x_tB = float("{0:.10f}".format(coordsB[-1][0]))
     y_tB = float("{0:.10f}".format(coordsB[-1][1]))
     
-    if ((x_tA, y_tA) == (x_tB, y_tB)):
-        lineA = ((x_fA, y_fA),(x_tA,y_tA))
-        lineB = ((x_tB, y_tB),(x_fB, y_fB))
+    if deflection == True
+        if ((x_tA, y_tA) == (x_tB, y_tB)):
+            lineA = ((x_fA, y_fA),(x_tA,y_tA))
+            lineB = ((x_tB, y_tB),(x_fB, y_fB))
 
-    elif ((x_tA, y_tA) == (x_fB, y_fB)):
-        lineA = ((x_fA, y_fA),(x_tA,y_tA))
-        lineB = ((x_fB, y_fB),(x_tB, y_tB))
+        elif ((x_tA, y_tA) == (x_fB, y_fB)):
+            lineA = ((x_fA, y_fA),(x_tA,y_tA))
+            lineB = ((x_fB, y_fB),(x_tB, y_tB))
 
-    elif ((x_fA, y_fA) == (x_fB, y_fB)):
-        lineA = ((x_tA, y_tA),(x_fA,y_fA))
-        lineB = ((x_fB, y_fB),(x_tB, y_tB))
+        elif ((x_fA, y_fA) == (x_fB, y_fB)):
+            lineA = ((x_tA, y_tA),(x_fA,y_fA))
+            lineB = ((x_fB, y_fB),(x_tB, y_tB))
 
-    else: #(from_node == to_node2)
-        lineA = ((x_tA, y_tA),(x_fA,y_fA))
-        lineB = ((x_tB, y_tB),(x_fB, y_fB))
-    
+        else: #(from_node == to_node2)
+            lineA = ((x_tA, y_tA),(x_fA,y_fA))
+            lineB = ((x_tB, y_tB),(x_fB, y_fB))
+    else:
+        if ((x_tA, y_tA) == (x_tB, y_tB)):
+            lineA = ((x_tA,y_tA), (x_fA, y_fA))
+            lineB = ((x_tB, y_tB),(x_fB, y_fB))
+
+        elif ((x_tA, y_tA) == (x_fB, y_fB)):
+            lineA = ((x_tA,y_tA), (x_fA, y_fA))
+            lineB = ((x_tB, y_tB),(x_fB, y_fB))
+
+        elif ((x_fA, y_fA) == (x_fB, y_fB)):
+            lineA = ((x_fA,y_fA),(x_tA, y_tA))
+            lineB = ((x_fB, y_fB),(x_tB, y_tB))
+
+        else: #(from_node == to_node2)
+            lineA = ((x_fA,y_fA),(x_tA, y_tA))
+            lineB = ((x_tB, y_tB),(x_fB, y_fB)) 
     
     # Get nicer vector form
     vA = [(lineA[0][0]-lineA[1][0]), (lineA[0][1]-lineA[1][1])]
@@ -444,78 +461,6 @@ def ang_geoline(geolineA, geolineB, degree = False):
     except:
         angle_deg = 0
         angle_rad = 0
-        
-    if degree == True: return angle_deg
-    else: return angle_rad
-    
-def ang_geoline_n(geolineA, geolineB, degree = False):
-    
-    """
-    Given two LineStrings it computes the deflection angle between them. Returns value in degrees or radians.
-    
-    ----------
-    Parameters
-    geolineA, geolineB: LineString geometries
-    degree: Boolean
-    
-    Returns:
-    ----------
-    float
-    """
-    
-    # extracting coordinates and creates lines
-    coordsA = list(geolineA.coords)
-    coordsB = list(geolineB.coords)   
-
-    x_fA = float("{0:.10f}".format(coordsA[0][0]))
-    y_fA = float("{0:.10f}".format(coordsA[0][1]))
-    x_tA = float("{0:.10f}".format(coordsA[-1][0]))
-    y_tA = float("{0:.10f}".format(coordsA[-1][1]))
-    
-    x_fB = float("{0:.10f}".format(coordsB[0][0]))
-    y_fB = float("{0:.10f}".format(coordsB[0][1]))
-    x_tB = float("{0:.10f}".format(coordsB[-1][0]))
-    y_tB = float("{0:.10f}".format(coordsB[-1][1]))
-    
-    if ((x_tA, y_tA) == (x_tB, y_tB)):
-        lineA = ((x_tA,y_tA), (x_fA, y_fA))
-        lineB = ((x_tB, y_tB),(x_fB, y_fB))
-
-    elif ((x_tA, y_tA) == (x_fB, y_fB)):
-        lineA = ((x_tA,y_tA), (x_fA, y_fA))
-        lineB = ((x_tB, y_tB),(x_fB, y_fB))
-
-    elif ((x_fA, y_fA) == (x_fB, y_fB)):
-        lineA = ((x_fA,y_fA),(x_tA, y_tA))
-        lineB = ((x_fB, y_fB),(x_tB, y_tB))
-
-    else: #(from_node == to_node2)
-        lineA = ((x_fA,y_fA),(x_tA, y_tA))
-        lineB = ((x_tB, y_tB),(x_fB, y_fB))
-    
-    
-    # Get nicer vector form
-    vA = [(lineA[0][0]-lineA[1][0]), (lineA[0][1]-lineA[1][1])]
-    vB = [(lineB[0][0]-lineB[1][0]), (lineB[0][1]-lineB[1][1])]
-    
-    try:
-        # Get dot prod
-        dot_prod = dot(vA, vB)
-        # Get magnitudes
-        magA = dot(vA, vA)**0.5
-        magB = dot(vB, vB)**0.5
-        # Get cosine value
-        cos_ = dot_prod/magA/magB
-        # Get angle in radians and then convert to degrees
-        angle_rad = math.acos(dot_prod/magB/magA)
-        # Basically doing angle <- angle mod 360
-        angle_deg = math.degrees(angle_rad)%360
-#         if angle_deg-180 >= 0: angle_deg = 360 - angle_deg
-    except:
-        angle_deg = 0
-        angle_rad = 0
-    
-
         
     if degree == True: return angle_deg
     else: return angle_rad

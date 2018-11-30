@@ -695,8 +695,8 @@ def dual_gdf(nodes_gdf, edges_gdf, crs):
         geo_lineB = edges_gdf[edges_gdf.index == row[index_lineB]].geometry.iloc[0]
         
         # computing angles in degrees and radians
-        deflection = uf.ang_geoline(geo_lineA, geo_lineB, degree = True)
-        deflection_rad = uf.ang_geoline(geo_lineA, geo_lineB, degree = False)
+        deflection = uf.ang_geoline(geo_lineA, geo_lineB, degree = True, deflection = True)
+        deflection_rad = uf.ang_geoline(geo_lineA, geo_lineB, degree = False, deflection = True)
            
         # setting values                                    
         edges_dual.set_value(row[0],'deg', deflection)
@@ -816,7 +816,7 @@ def natural_roads(streetID, naturalID, direction, nodes_gdf, edges_gdf):
         else: towards = "fr"
 
         # measuring deflection angle, adding it to the dictionary, if lower than 45 degrees
-        deflection = uf.ang_geoline(geo, geo_F, degree = True)
+        deflection = uf.ang_geoline(geo, geo_F, degree = True, deflection = True)
         if (deflection >= 45): continue
         else:
             angles[row_F[0]] = deflection # dictionary with streetID and angle

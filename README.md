@@ -12,7 +12,7 @@ This repository provides a set of functions to extract salient urban features in
 
 The tools are written in Python and uses a series of libraries, including [Geopandas](http://geopandas.org), [OSMNx](https://osmnx.readthedocs.io/en/stable/), and related dependencies.
 
-The methods are fully documented in 'A Computational approach to ‘The Image of the City'' by Filomena, Verstegen, and Manley, at the time of the current release in review in [Cities](https://www.journals.elsevier.com/cities/).
+The methods are fully documented in 'A Computational approach to ‘The Image of the City'' by Filomena, Verstegen, and Manley, at the time of this release in review in [Cities](https://www.journals.elsevier.com/cities/).
 
 ## Functions
 

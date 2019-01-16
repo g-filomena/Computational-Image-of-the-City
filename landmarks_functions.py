@@ -61,12 +61,14 @@ def select_buildings(city_buildings, area_to_clip, height_field, base_field = No
     # clipping obstructions
     if  (area_obstructions is None): area_obstructions = area_to_clip.geometry.loc[0].buffer(800)
     else: area_obstructions = area_obstructions.geometry.loc[0]
+        
+    city_buildings= city_buildings[(city_buildings['area'] > 199) & (city_buildings['height'] >= 1)]
     obstructions = city_buildings[city_buildings.geometry.within(area_obstructions)]
-    
+        
     # clipping buildings in the case-study area
     buildings = city_buildings[city_buildings.geometry.within(area_to_clip.geometry.loc[0])]
     buildings['r_height'] = buildings['height'] + buildings['base']
-    
+
     return(buildings, obstructions)
    
 def structural_properties(buildings_gdf, obstructions_gdf, street_gdf, buffer = 150):
@@ -88,7 +90,7 @@ def structural_properties(buildings_gdf, obstructions_gdf, street_gdf, buffer = 
     # spatial index
     sindex = obstructions_gdf.sindex
     street_network = street_gdf.geometry.unary_union
-    buildings_gdf['neigh'], buildings_gdf['road']  = 0
+    buildings_gdf['neigh'], buildings_gdf['road']  = 0.0
     
     for row in buildings_gdf.itertuples():
                
@@ -106,7 +108,7 @@ def structural_properties(buildings_gdf, obstructions_gdf, street_gdf, buffer = 
         
         # neighbours
         possible_neigh_index = list(sindex.intersection(buff.bounds))
-        possible_neigh = obstructions.iloc[possible_neigh_index]
+        possible_neigh = obstructions_gdf.iloc[possible_neigh_index]
         precise_neigh = possible_neigh[possible_neigh.intersects(buff)]
         buildings_gdf.set_value(row[0], 'neigh', len(precise_neigh))
         
@@ -173,17 +175,19 @@ def advance_visibility(buildings_gdf, obstructions_gdf, radius = 500):
         # creating lines all around the building till a distance of 500
         while(i <= 360):
 
-            coords = uf.get_coord_angle([origin.x, origin.y], distance = radium, angle = i)
+            coords = uf.get_coord_angle([origin.x, origin.y], distance = radius, angle = i)
             line = LineString([origin, Point(coords)])
             
             # finding actual obstacles to this line
             obstacles = possible_obstacles[possible_obstacles.crosses(line)]
             ob = cascaded_union(obstacles.geometry)
             
-            """"
+            
+            """
             if there are obstacles: indentify where the line from the origin is interrupted, create the geometry and
             append it to the list of lines
-            """"
+            """
+            
             if len(obstacles > 0):
                 t = line.intersection(ob)
                 
@@ -217,10 +221,10 @@ def advance_visibility(buildings_gdf, obstructions_gdf, radius = 500):
             poly_vis = pp.difference(row[index_geometry])      
         buildings_gdf.set_value(row[0],'a_vis', poly_vis.area)
         
-        """"
+        """
         !! it does not work always - saving the polygon in a GDF containing visibility polygons. 
         It may create irregular multi part polygons.
-        """"
+        """
         try:
             if len(poly_vis) > 1: #MultiPolygon
                 for i in range(0, len(poly_vis)): 
@@ -271,11 +275,11 @@ def visibility(buildings_gdf, sight_lines):
     visibility = pd.merge(visibility_tmp, count, left_on= 'buildingID', right_on = 'buildingID')   
     
     # dropping and rename columns
-    visibility.drop(['DIST_ALONG', 'Visibility', 'geometry'], axis = 1, errors = 'ignore', inplace=True)
+    visibility.drop(['DIST_ALONG', 'visible', 'Visibility', 'geometry'], axis = 1, errors = 'ignore', inplace=True)
     visibility.rename(columns = {'length':'dist','mean_length':'m_dist'}, inplace=True) 
-    
+
     # merging and building the final output
-    tmp = pd.merge(buildings_gdf, visibility[['buildingID', 'dist', 'm_dist', 'n_slines']], on = 'buildingID', how= 'left')  
+    tmp = pd.merge(buildings_gdf, visibility[['buildingID', 'dist', 'm_dist', 'n_slines']], on = 'buildingID', how= 'left') 
     tmp['dist'].fillna((tmp['dist'].min()), inplace = True)
     tmp['m_dist'].fillna((tmp['m_dist'].min()), inplace=True)
     tmp['n_slines'].fillna((tmp['n_slines'].min()), inplace=True)
@@ -302,14 +306,14 @@ def cultural_meaning(buildings_gdf, cultural_gdf, score = None):
     GeoDataFrame
     """
     # spatial index
-    sindex = cultural_elements.sindex 
+    sindex = cultural_gdf.sindex 
     buildings_gdf['cult'] = 0
     index_geometry = buildings_gdf.columns.get_loc("geometry")+1 
     
     for row in buildings_gdf.itertuples():
         g = row[index_geometry] # geometry
         possible_matches_index = list(sindex.intersection(g.bounds)) # looking for possible candidates in the external GDF
-        possible_matches = cultural_elements.iloc[possible_matches_index]
+        possible_matches = cultural_gdf.iloc[possible_matches_index]
         precise_matches = possible_matches[possible_matches.intersects(g)]
         
         if (score == None): cm = len(precise_matches) # score only based on number of intersecting elements
@@ -388,11 +392,9 @@ def classify_lu(buildings_gdf, land_use):
                                                               else 'military' if x in military
                                                               else x)
     
-     buildings_gdf[buildings_gdf[land_use].str.contains('residential') | 
-                   buildings_gdf[land_use].str.contains('Condominium') |
-                  buildings_gdf[land_use].str.contains('Residential')] = 'residential'
+    buildings_gdf[land_use][buildings_gdf[land_use].str.contains('residential') | buildings_gdf[land_use].str.contains('Condominium') | buildings_gdf[land_use].str.contains('Residential')] = 'residential'
     
-     buildings_gdf[buildings_gdf[land_use].str.contains('commercial') | 
+    buildings_gdf[land_use][buildings_gdf[land_use].str.contains('commercial') | 
                    buildings_gdf[land_use].str.contains('Commercial')] = 'residential'
     
     return(buildings_gdf)
@@ -422,7 +424,8 @@ def land_use_from_polygons(buildings_gdf, other_gdf, column, land_use_field):
     # spatial index
     sindex = other_gdf.sindex
     index_geometry = buildings_gdf.columns.get_loc("geometry")+1 
-
+    index_geometryPol = other_gdf.columns.get_loc("geometry")+1 
+    
     for row in buildings_gdf.itertuples():
 
         g = row[index_geometry] #geometry
@@ -599,7 +602,7 @@ def local_scores(buildings_gdf, buffer = 800):
    
     # recomputing the scores per each building in relation to its neighbours, in an area whose extent is regulated by 'buffer'
     for row in buildings_gdf.itertuples():
-        b = row[index_geometry].centroid.buffer(buffer_extension)
+        b = row[index_geometry].centroid.buffer(buffer)
         possible_matches_index = list(spatial_index.intersection(b.bounds))
         possible_matches = buildings_gdf.iloc[possible_matches_index]
         LL = possible_matches[possible_matches.intersects(b)]
@@ -616,9 +619,6 @@ def local_scores(buildings_gdf, buffer = 800):
         # assigning the so obtined score to the building
         localScore = float("{0:.3f}".format(LL['lScore'].loc[row[0]]))
         buildings_gdf.set_value(row[0], 'lScore', localScore)
-    
-    # rescaling again on the whole datasets
-    uf.scaling_columnDF(buildings_gdf, 'lScore', inverse = False)
         
     return buildings_gdf
 

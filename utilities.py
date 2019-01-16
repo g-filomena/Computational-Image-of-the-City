@@ -257,9 +257,10 @@ def plot_polygons(gdf, column = None, classes = 7, title = 'Plot', scheme = None
        
     plt.show()    
     
-def plot_lines_aside(gdf, classes = 7, lw = 0.9, column = None, column_a = None, title = 'Plot', scheme = 'fisher_jenks', cmap = 'Greys_r', fcolor = 'white', legend = False, bb = True):
+def plot_lines_aside(gdf, gdf_c = None, classes = 7, lw = 0.9, column = None, column_a = None, title = 'Plot', scheme = 'fisher_jenks', cmap = 'Greys_r', fcolor = 'white', legend = False, bb = True, compare  = True, f = 15):
     
-    # background black or white - basic settings   
+    # background black or white - basic settings 
+    
     if column != None: gdf.sort_values(by = column, ascending = True, inplace = True)    
     if column_a != None: gdf.sort_values(by = column, ascending = True, inplace = True)
     fig, (ax1, ax2) = plt.subplots(ncols = 2, figsize=(15, 8), facecolor = fcolor)
@@ -272,13 +273,12 @@ def plot_lines_aside(gdf, classes = 7, lw = 0.9, column = None, column_a = None,
     plt.axis('equal')
     ax2.set_axis_off()
     ax1.set_axis_off()
-        
     col = [column, column_a]
     
     for n, i in enumerate([ax1, ax2]):
         i.set_aspect('equal')
-        if (col[n] != None) & (scheme == None): gdf.plot(ax = i, column = col[n], linewidth = lw, legend = legend) # categorical map
-        
+        if (col[n] != None) & (scheme == None): gdf.plot(ax = i, linewidth = lw, color = 'black') # categorical map
+              
         # LynchBreaks scheme
         elif scheme == "LynchBreaks":
             bins = [0.12, 0.25, 0.50, 0.75, 1.00]
@@ -307,7 +307,26 @@ def plot_lines_aside(gdf, classes = 7, lw = 0.9, column = None, column_a = None,
 
     plt.show()
     
+def overlap_lines(gdf, gdf_c, lw = 0.9, title = 'Plot', f = 15):
     
+    # background black or white - basic settings 
+#     fig, ax = plt.subplots(ncols = 1, figsize=(f, f), facecolor = fcolor)
+#     fig.suptitle(title, color = tcolor)
+        # background black or white - basic settings 
+    fig, ax = plt.subplots(ncols = 1, figsize=(f, f),)
+    fig.suptitle(title)
+    plt.axis('equal')
+    ax.set_axis_off()
+    gdf.plot(ax = ax, linewidth = lw, color = 'black') # categorical map
+    gdf_c.plot(ax = ax, linewidth = lw, color = 'red')
+    
+#     if bb == True: tcolor = 'white'
+#     else: tcolor = 'black'
+#     rect = fig.patch    
+#     if bb == True: rect.set_facecolor('black')
+#     else: rect.set_facecolor('white')   
+
+    plt.show()    
 
     
 def scaling_columnDF(df, i, inverse = False):
@@ -408,7 +427,7 @@ def ang_geoline(geolineA, geolineB, degree = False, deflection = False):
     x_tB = float("{0:.10f}".format(coordsB[-1][0]))
     y_tB = float("{0:.10f}".format(coordsB[-1][1]))
     
-    if deflection == True
+    if deflection == True:
         if ((x_tA, y_tA) == (x_tB, y_tB)):
             lineA = ((x_fA, y_fA),(x_tA,y_tA))
             lineB = ((x_tB, y_tB),(x_fB, y_fB))
@@ -464,6 +483,43 @@ def ang_geoline(geolineA, geolineB, degree = False, deflection = False):
         
     if degree == True: return angle_deg
     else: return angle_rad
+    
+    
+def center_line(u, v, uC, vC, line_geo, line_geoC): 
+    
+    line_coordsA = list(line_geo.coords)
+    line_coordsB = list(line_geoC.coords)
+        
+    if ((u == vC) & (v == uC)): line_coordsB.reverse()  
+    if line_coordsA == line_coordsB: center_line = LineString([coor for coor in line_coordsA]) 
+    else:
+        while len(line_coordsA) > len(line_coordsB):
+            index = int(len(line_coordsA)/2)
+            del line_coordsA[index]
+        while len(line_coordsB) > len(line_coordsA):
+            index = int(len(line_coordsB)/2)
+            del line_coordsB[index]          
+    
+        new_line = line_coordsA
+        for n, i in enumerate(line_coordsA):
+            link = LineString([coor for coor in [line_coordsA[n], line_coordsB[n]]])
+            np = link.centroid.coords[0]           
+            new_line[n] = np
+            
+        new_line[0] = line_coordsA[0]
+        new_line[-1] = line_coordsA[-1]
+        center_line = LineString([coor for coor in new_line])
+
+    return(center_line)
+
+
+def gdf_dist(point, gdf):
+    gdf['Dist'] = gdf.apply(lambda row:  point.distance(row.geometry),axis=1)
+    geoseries = gdf.iloc[gdf['Dist'].argmin()]
+    distance  = geoseries.Dist
+    index = geoseries.name
+    
+    return distance, index
 
 
 

@@ -43,7 +43,6 @@ def get_fromOSM(type_download, place, network_type, epsg, distance = 7000):
         what type of street or other network to get - from OSMNx paramaters
     epsg: int
     distance: float, only yse if type_download = 'distance from address'
-    project: boolean
         
     Returns
     -------
@@ -65,16 +64,14 @@ def get_fromOSM(type_download, place, network_type, epsg, distance = 7000):
 
     else: # (type_download == 'OSMplace')
         G = ox.graph_from_place(place, network_type = network_type, simplify = True)
-    
-    if project: G = ox.project_graph(G)
-    
+       
     for i, item in enumerate(G.edges()):
         if isinstance(G[item[0]][item[1]][0]['osmid'], (list,)):
             G[item[0]][item[1]][0]['osmid'] = G[item[0]][item[1]][0]['osmid'][0]
             
     # using OSMNx to download data from OpenStreetMap      
     nodes = ox.graph_to_gdfs(G, nodes=True, edges=False, node_geometry=True, fill_edge_geometry=False)
-    nodes_gdf = nodes.drop(nodes[['highway', 'ref']], axis=1)
+    nodes_gdf = nodes.drop(['highway', 'ref'], axis=1, errors = 'ignore')
     edges = ox.graph_to_gdfs(G, nodes=False, edges=True, node_geometry=False, fill_edge_geometry=True)
     edges_gdf = edges[['geometry', 'length', 'osmid', 'u','v', 'highway','key', 'oneway', 'maxspeed','name']]
     
@@ -242,7 +239,7 @@ def double_nodes(nodes_gdf, edges_gdf):
     GeoDataFrames
     """
     # the index of nodes_gdf has to be nodeID
-    if nodes_gdf.index.values != nodes_gdf.nodeID.values: nodes_gdf.index =  nodes_gdf.nodeID
+    if list(nodes_gdf.index.values) != list(nodes_gdf.nodeID.values): nodes_gdf.index =  nodes_gdf.nodeID
     nodes_gdf, edges_gdf =  nodes_gdf.copy(), edges_gdf.copy()
     
     print('Eliminating duplicate geometries - nodes..')
@@ -372,7 +369,7 @@ def simplify_graph(nodes_gdf, edges_gdf):
     dd_u, dd_v = dict(edges_gdf['u'].value_counts()), dict(edges_gdf['v'].value_counts())
     dd = {k: dd_u.get(k, 0) + dd_v.get(k, 0) for k in set(dd_u) | set(dd_v)}
     
-    # editing the ones which onlu connect two edges
+    # editing the ones which only connect two edges
     to_edit = {k: v for k, v in dd.items() if v == 2}
     if len(to_edit) == 0: return(nodes_gdf, edges_gdf)
     to_edit_list = list(to_edit.keys())
@@ -497,13 +494,13 @@ def clean_network(nodes_gdf, edges_gdf, dead_ends = False):
                 uC, vC, geo_lineC, index_lineC = rowC[index_u], rowC[index_v], rowC[index_geo], rowC[0] 
                 
                 # if this edge is 20% longer than the edge identified in the outer loop, delete it
-                if geo_lineC.length > (geo_line.length * 1.20): 
+                if (geo_lineC.length > (geo_line.length * 1.10)):
                     edges_gdf.drop(index_lineC, axis = 0, inplace = True) 
                     continue
                 
                 # else draw a center-line, replace the geometry of the outer-loop segment with the CL, drop the segment of the inner-loop
                 else:
-                    cl = center_line(u, v, uC, vC, geo_line, geo_lineC)
+                    cl = uf.center_line(u, v, uC, vC, geo_line, geo_lineC)
                     edges_gdf.set_value(index_line,'geometry', cl)
                     edges_gdf.drop(index_lineC, axis = 0, inplace = True)
 
@@ -512,10 +509,10 @@ def clean_network(nodes_gdf, edges_gdf, dead_ends = False):
         nodes_gdf, edges_gdf = simplify_graph(nodes_gdf, edges_gdf)  
     
     # keeps nodes which are actually used by the edges in the geodataframe
-    to_keep = list(set(list(edges_gdf['u'].unique()) + list(streets_gdf['v'].unique())))
+    to_keep = list(set(list(edges_gdf['u'].unique()) + list(edges_gdf['v'].unique())))
     nodes_gdf = nodes_gdf[nodes_gdf['nodeID'].isin(to_keep)]
     
-    edges_gdf.drop(['code', 'coords', 'tmp'], axis = 1, inplace = True)
+    edges_gdf.drop(['code', 'coords', 'tmp'], axis = 1, inplace = True, errors = 'ignore')
     nodes_gdf['nodeID'] = nodes_gdf.nodeID.astype(int)
     print("Done all =========")  
     
@@ -590,7 +587,8 @@ def graph_fromGDF(nodes_gdf, edges_gdf, nodes_attributes, edges_costs):
         Ng.node[item]['x'] = pos[item][0]
         Ng.node[item]['y'] = pos[item][1]
         Ng.node[item]['nodeID'] = pos[item][2]
-        for attribute in nodes_attributes: Ng.node[item][attribute] = nodes[attribute][nodes['nodeID'] == pos[item][2]].tolist()[0]
+        for attribute in nodes_attributes: 
+            Ng.node[item][attribute] = nodes_gdf[attribute][nodes_gdf['nodeID'] == pos[item][2]].tolist()[0]
                                                                                        
     for i, item in enumerate(G.edges()):
         Ng.add_edge(item[0], item[1])
@@ -617,7 +615,7 @@ def dual_gdf(nodes_gdf, edges_gdf, crs):
     -------
     GeoDataFrames
     """
-    if edges_gdf.index.values != edges_gdf.streetID.values: edges_gdf.index =  edges_gdf.streetID
+    if list(edges_gdf.index.values) != list(edges_gdf.streetID.values): edges_gdf.index =  edges_gdf.streetID
     
     # computing centroids                                       
     centroids_gdf = edges_gdf.copy()

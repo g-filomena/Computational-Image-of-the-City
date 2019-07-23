@@ -13,7 +13,7 @@ arcpy.env.overwriteOutput = True
 load_folder = "C:/Users/g_filo01/sciebo/Scripts/Image of the City/Outputs/"+city_name
 aprx = arcpy.mp.ArcGISProject("CURRENT")
 
-# buildings, obstructions files, observer points (nodes from which computing the sight_lines)
+# buildings, obstructions files, observer points (nodes from where computing the sight_lines)
 buildings = env+"/"+city_name+"_buildings_sight.shp"
 obstructions = env+"/"+city_name+"_obstructions.shp"
 observer_points =  load_folder+"/"+city_name+"_nodes.shp"
@@ -44,7 +44,7 @@ sightlines_file = geoDB+"/"+city_name+"_sightlines"
 # construct sight-lines:
 arcpy.ddd.ConstructSightLines(observer_points, buildings, sightlines_file, height_observer, heigth_buildings, None, 60, direction)
 
-# remove line shortes than 200 m
+# remove line shortest than 200 m
 with arcpy.da.UpdateCursor(sightlines_file, 'SHAPE@LENGTH') as cursor:
     for row in cursor:
         if row[0] < 200:

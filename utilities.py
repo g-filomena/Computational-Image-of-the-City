@@ -7,12 +7,15 @@ import matplotlib.cm as cm
 import pysal as ps
 import random
 import pylab
-
+import matplotlib.colors as cols
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from shapely.geometry import Point, LineString, MultiLineString
-
+from numpy.random import randn
 from scipy import sparse
 from scipy.sparse import linalg
+import matplotlib.patches as mpatches
+import sys
+from time import sleep
 pd.set_option('precision', 10)
 
 """
@@ -23,7 +26,8 @@ Series of utilies for plotting LineString, Points or Polygons geodataframes, and
 ## Plotting
 	
     
-def plot_points(gdf, column, classes = 7, ms = 0.9, ms_col = None, title = 'Plot', scheme = 'fisher_jenks', cmap = 'Greys_r', legend = False, bb = True, f = 10):
+def plot_points(gdf, column, classes = 7, ms = 0.9, ms_col = None, title = 'Plot', scheme = 'fisher_jenks', cmap = 'Greys_r', 
+                legend = False, bb = True, line_back = pd.DataFrame({'a' : []}), f = 10):
         
     """
     It creates a plot from a points GDF. 
@@ -60,6 +64,9 @@ def plot_points(gdf, column, classes = 7, ms = 0.9, ms_col = None, title = 'Plot
     plt.axis('equal')
     ax.set_axis_off()
     
+    if line_back.empty == False:
+        line_back.plot(ax = ax, color = 'white', linewidth = 1.1, alpha = 0.3)
+    
     # markers size from column
     if (ms_col != None): ms = gdf[ms_col]
         
@@ -75,8 +82,8 @@ def plot_points(gdf, column, classes = 7, ms = 0.9, ms_col = None, title = 'Plot
         leg.get_texts()[2].set_text('0.25 - 0.50')
         leg.get_texts()[3].set_text('0.50 - 0.75')
         leg.get_texts()[4].set_text('0.75 - 1.00')
-
-    elif scheme != None: gdf.plot(ax = ax, column = column, k = classes, cmap = cmap, s = ms, scheme = scheme, legend = legend)
+        
+    elif scheme != None: gdf.plot(ax = ax, column = column, k = classes, cmap = cmap, s = ms, scheme = scheme, legend = legend, alpha = 1)
     else: gdf.plot(ax = ax, linewidth = lw, color = 'black')
         
     if legend == True:
@@ -87,10 +94,11 @@ def plot_points(gdf, column, classes = 7, ms = 0.9, ms_col = None, title = 'Plot
         if bb == True:
             for text in leg.get_texts(): text.set_color("white")   
 
-    plt.show()
+    plt.show() 
     
     
-def plot_lines(gdf, column = None, classes = 7, lw = 1.1, title = 'Plot', scheme = None, cmap = 'Greys_r', legend = False, cb = False,     bb = True, f=10):
+def plot_lines(gdf, column = None, classes = 7, lw = 1.1, title = 'Plot', scheme = None, cmap = 'Greys_r', 
+               legend = False, cb = False, bb = True, f=10):
     """
     It creates a plot from a lineStrings GDF.
     When column and scheme are not 'None' it plots the distribution over value and geographical space of variable 'column using scheme
@@ -123,15 +131,16 @@ def plot_lines(gdf, column = None, classes = 7, lw = 1.1, title = 'Plot', scheme
     rect.set_zorder(0)
     if bb == True: rect.set_facecolor('black')
     else: rect.set_facecolor('white')
+        
     fs = f+5 # font-size    
     fig.suptitle(title, color = tcolor, fontsize=fs)
     plt.axis('equal')
     ax.set_axis_off()
-    
+
     # categorigal variable
     if (column != None) & (scheme == None):
         if cmap == None: # boolean map
-            colors = ['white', 'black']
+            colors = ['white', 'red']
             gdf.plot(ax = ax, categorical = True, column = column, color = colors, linewidth = lw, legend = legend) 
         else: gdf.plot(ax = ax, column = column, cmap = cmap, linewidth = lw, legend = legend) # cateogircal map
     
@@ -148,11 +157,28 @@ def plot_lines(gdf, column = None, classes = 7, lw = 1.1, title = 'Plot', scheme
         leg.get_texts()[2].set_text('0.25 - 0.50')
         leg.get_texts()[3].set_text('0.50 - 0.75')
         leg.get_texts()[4].set_text('0.75 - 1.00')
+        
+    elif scheme == "pedestrians":
+        bins = [10, 30, 50, 70, 90, 110, 130, 150, 170]
+        cl = ps.User_Defined(gdf[column], bins)
+        gdf.assign(cl = cl.yb).plot(ax = ax, column= 'cl', categorical = True, k = 9, cmap = cmap, linewidth = lw, legend=True)
+        
+        # Lynch legend
+        leg = ax.get_legend()
+        leg.get_texts()[0].set_text('0 - 10')
+        leg.get_texts()[1].set_text('10 - 30')
+        leg.get_texts()[2].set_text('30 - 50')
+        leg.get_texts()[3].set_text('50 - 70')
+        leg.get_texts()[4].set_text('70 - 90')
+        leg.get_texts()[5].set_text('90 - 110')
+        leg.get_texts()[6].set_text('110 - 130')
+        leg.get_texts()[7].set_text('130 - 150')
+        leg.get_texts()[8].set_text('150 - 170')
     
     elif scheme != None:
         gdf.plot(ax = ax, column = column, k = classes, cmap = cmap, linewidth = lw, scheme = scheme, legend = legend)
     else: gdf.plot(ax = ax, linewidth = lw, color = 'black') # plain map
-                      
+        
     if legend == True:
         leg = ax.get_legend()  
         leg.set_bbox_to_anchor((0., 0., 0.2, 0.2))
@@ -176,7 +202,8 @@ def plot_lines(gdf, column = None, classes = 7, lw = 1.1, title = 'Plot', scheme
 
     
         
-def plot_polygons(gdf, column = None, classes = 7, title = 'Plot', scheme = None, cmap = 'Greens_r', legend = False, cb = False, bb = True,  f = 10):
+def plot_polygons(gdf, column = None, classes = 7, title = 'Plot', scheme = None, cmap = 'Greens_r', legend = False, 
+                  cb = False, bb = True,  f = 10):
     """
     It creates a plot from a polygons GDF.
     When column and scheme are not 'None' it plots the distribution over value and geographical space of variable 'column using scheme
@@ -257,33 +284,39 @@ def plot_polygons(gdf, column = None, classes = 7, title = 'Plot', scheme = None
        
     plt.show()    
     
-def plot_lines_aside(gdf, gdf_c = None, classes = 7, lw = 0.9, column = None, column_a = None, title = 'Plot', scheme = 'fisher_jenks', cmap = 'Greys_r', fcolor = 'white', legend = False, bb = True, compare  = True, f = 15):
+def plot_lines_aside(gdf, gdf_c = None, classes = 7, lw = 0.9, columnA = None, columnB = None, title = 'Plot', 
+                     scheme = 'fisher_jenks', bins = None, cmap = 'Greys_r', legend = False, bb = True, f = 15):
     
     # background black or white - basic settings 
     
-    if column != None: gdf.sort_values(by = column, ascending = True, inplace = True)    
-    if column_a != None: gdf.sort_values(by = column, ascending = True, inplace = True)
+    if columnA != None: gdf.sort_values(by = columnA, ascending = True, inplace = True)    
+
+    fcolor = 'white'
     fig, (ax1, ax2) = plt.subplots(ncols = 2, figsize=(15, 8), facecolor = fcolor)
     if bb == True: tcolor = 'white'
     else: tcolor = 'black'
     rect = fig.patch    
     if bb == True: rect.set_facecolor('black')
     else: rect.set_facecolor('white')   
+    
     fig.suptitle(title, color = tcolor)
     plt.axis('equal')
     ax2.set_axis_off()
     ax1.set_axis_off()
-    col = [column, column_a]
+    col = [columnA, columnB]
     
     for n, i in enumerate([ax1, ax2]):
+        if (n == 1) & (columnB != None): gdf.sort_values(by = columnB, ascending = True, inplace = True)  
         i.set_aspect('equal')
+        
         if (col[n] != None) & (scheme == None): gdf.plot(ax = i, linewidth = lw, color = 'black') # categorical map
               
         # LynchBreaks scheme
         elif scheme == "LynchBreaks":
             bins = [0.12, 0.25, 0.50, 0.75, 1.00]
             cl = ps.User_Defined(gdf[col[n]], bins)
-            gdf.assign(cl = cl.yb).plot(ax = i, column= 'cl', categorical = True, k = 5, cmap = cmap, linewidth = lw, legend=True)
+            print(cl.yb)
+            gdf.assign(cl = cl.yb).plot(ax = i, column = 'cl', categorical = True, k = 5, cmap = cmap, linewidth = lw, legend=True)
 
             leg = i.get_legend()
             leg.get_texts()[0].set_text('0.00 - 0.12')
@@ -292,18 +325,65 @@ def plot_lines_aside(gdf, gdf_c = None, classes = 7, lw = 0.9, column = None, co
             leg.get_texts()[3].set_text('0.50 - 0.75')
             leg.get_texts()[4].set_text('0.75 - 1.00')
         
+        elif scheme == "pedestrians":
+                       
+            gdf['cat'] = 0
+            text = []
+            
+            for en, b in enumerate(bins):
+                if en == 0: 
+                    text.append("0")
+                    continue
+                gdf['cat'][(gdf[col[n]] > bins[en-1]) & (gdf[col[n]] < b)] = en
+                text.append(str(bins[en-1])+"-"+str(b))
+                if en == len(bins)-1:
+                    gdf['cat'][(gdf[col[n]] >= b)] = en+1
+                    text.append(">"+str(b))
+            
+            color0 = '#000000'
+            color1 = '#800026'
+            color2 = '#e31a1c'
+            color3 = '#fc4e2a'
+            color4 = '#fd8d3c'
+            color5 = '#feb24c'
+            color6 = '#fed976'
+            color7 = '#ffffcc'
+
+            categories = [0,1,2,3,4,5,6,7]
+            colors = [color0, color1, color2, color3, color4, color5, color6, color7]
+            colordict = dict(zip(categories, colors))
+            gdf["Color"] = gdf['cat'].apply(lambda x: colordict[x])
+         
+#             cl = ps.User_Defined(gdf[col[n]], bins)
+            gdf.plot(ax = i, categorical = True, color=gdf.Color,  linewidth = lw, legend=True)
+           
+            legend_dict = dict(zip(text, colors))
+            patchList = []
+            for key in legend_dict:
+                data_key = mpatches.Patch(color=legend_dict[key], label=key)
+                patchList.append(data_key)
+            leg = plt.legend(handles=patchList, loc = 3)
+            for text in leg.get_texts():
+                plt.setp(text, color = 'w')
+   
+ 
         # other schemes
-        elif scheme != None: gdf.plot(ax = i, column = col[n], k = classes, cmap = cmap, linewidth = lw, scheme = scheme, legend = legend)
-        else: gdf.plot(ax = i, linewidth = lw, color = 'black')  # plain map     
-    
-        if legend == True:
-#             i.legend(loc=1)
+        elif scheme != None: 
+
+            gdf.plot(ax = i, column = col[n], k = classes, cmap = cmap, linewidth = lw, scheme = scheme, legend = legend)
             leg = i.get_legend()
             leg.set_bbox_to_anchor((0., 0., 0.2, 0.2))
-            leg.set_zorder(102)
+        
+        else: gdf.plot(ax = i, linewidth = lw, color = 'black')  # plain map     
+    
+#         if legend == True:
+#             i.legend(loc=1)
+#             leg = i.get_legend()
+#             
+#             leg.set_zorder(102)
 #             leg.get_frame().set_linewidth(0.0) # remove legend border
-            if bb == True:
-                for text in leg.get_texts(): text.set_color("white")
+#             if bb == True:
+#                 for text in leg.get_texts(): text.set_color("white")
 
     plt.show()
     
@@ -394,7 +474,6 @@ def get_coord_angle(origin, distance, angle):
     """
 
     (disp_x, disp_y) = (distance * math.sin(math.radians(angle)), distance * math.cos(math.radians(angle)))
-
     return (origin[0] + disp_x, origin[1] + disp_y)
 
 def ang_geoline(geolineA, geolineB, degree = False, deflection = False):
@@ -483,14 +562,36 @@ def ang_geoline(geolineA, geolineB, degree = False, deflection = False):
         
     if degree == True: return angle_deg
     else: return angle_rad
+
+def ang(lineA, lineB, degree = True):
+    # Get nicer vector form
     
+    vA = [(lineA[0][0]-lineA[1][0]), (lineA[0][1]-lineA[1][1])]
+    vB = [(lineB[0][0]-lineB[1][0]), (lineB[0][1]-lineB[1][1])]
+    print(vA, vB)
+    # Get dot prod
+    dot_prod = dot(vA, vB)
+
+    # Get magnitudes
+    magA = dot(vA, vA)**0.5
+    magB = dot(vB, vB)**0.5
+    print(dot_prod)
+    # Get cosine value
+    cos_ = dot_prod/magA/magB
+    # Get angle in radians and then convert to degrees
+    angle_rad = math.acos(dot_prod/magB/magA)
+    print(angle_rad)
+    # Basically doing angle <- angle mod 360
+    angle_deg = math.degrees(angle_rad)%360
+    if degree == True: return angle_deg
+    else: return angle_rad
     
-def center_line(u, v, uC, vC, line_geo, line_geoC): 
+def center_line(line_geo, line_geoC): 
     
     line_coordsA = list(line_geo.coords)
     line_coordsB = list(line_geoC.coords)
         
-    if ((u == vC) & (v == uC)): line_coordsB.reverse()  
+    if ((line_coordsA[0] == line_coordsB[-1]) | (line_coordsA[-1] == line_coordsB[0])): line_coordsB.reverse()  
     if line_coordsA == line_coordsB: center_line = LineString([coor for coor in line_coordsA]) 
     else:
         while len(line_coordsA) > len(line_coordsB):
@@ -503,7 +604,7 @@ def center_line(u, v, uC, vC, line_geo, line_geoC):
         new_line = line_coordsA
         for n, i in enumerate(line_coordsA):
             link = LineString([coor for coor in [line_coordsA[n], line_coordsB[n]]])
-            np = link.centroid.coords[0]           
+            np = link.centroid.coords[0]       
             new_line[n] = np
             
         new_line[0] = line_coordsA[0]
@@ -513,14 +614,57 @@ def center_line(u, v, uC, vC, line_geo, line_geoC):
     return(center_line)
 
 
-def gdf_dist(point, gdf):
-    gdf['Dist'] = gdf.apply(lambda row:  point.distance(row.geometry),axis=1)
-    geoseries = gdf.iloc[gdf['Dist'].argmin()]
+def dist_to_gdf(point, gpd):
+    gpd = gpd.copy()
+    gpd['Dist'] = gpd.apply(lambda row:  point.distance(row.geometry),axis=1)
+    geoseries = gpd.loc[gpd['Dist'].argmin()]
     distance  = geoseries.Dist
     index = geoseries.name
-    
     return distance, index
 
+
+def merge_lines(geolines):
+    
+    first = list(geolines[0].coords)
+    second = list(geolines[1].coords)
+    coords = []
+
+    reverse = False
+    if first[0] == second[0]: 
+        reverse = True
+        first.reverse()
+    if first[-1] == second[-1]: second.reverse()
+    if first[0] == second[-1]:
+        first.reverse()
+        second.reverse()
+        reverse = True
+    
+    coords = first + second
+    last = second
+    for n,i in enumerate(geolines):
+        if n < 2: continue
+        next_coords = list(i.coords)
+        if (next_coords[-1] == last[-1]) :
+            next_coords.reverse()
+            last = next_coords
+            
+    if reverse == True: coords.reverse()
+    geoline = LineString([coor for coor in coords])
+    return(geoline)
+            
+def print_row(index_column):
+    sys.stdout.write('\r')
+    sys.stdout.write("at row: "+ str(index_column))
+    sys.stdout.flush()
+    sleep(0.05)
+    
+    
+            
+            
+            
+            
+            
+            
 
 
     

@@ -6,6 +6,7 @@ import community
 import math
 from math import sqrt
 import matplotlib.pyplot as plt
+import ast
 
 from scipy import sparse
 from scipy.sparse import linalg
@@ -91,7 +92,8 @@ def get_fromOSM(type_download, place, network_type, epsg, distance = 7000):
                                             
     # columns to keep (u and v represent "from" and "to" node)
     nodes_gdf = nodes_gdf[['nodeID','x','y','geometry']]
-    edges_gdf = edges_gdf[['streetID','u','v','key','geometry', 'length', 'highway','oneway', 'maxspeed','name']]
+    edges_gdf = edges_gdf[['streetID','u','v','key','geometry', 'length', 'highway','oneway', 'name']]
+    edges_gdf['oneway'] *= 1
     
     # resolving lists 
     edges_gdf['highway'] = [x[0] if type(x) == list else x for x in edges_gdf['highway']]
@@ -137,8 +139,8 @@ def get_fromSHP(directory, epsg, crs, area = None, roadType_field = None, direct
         
     columns = [roadType_field, direction_field, speed_field, name_field]
     new_columns = ['highway','oneway', 'maxspeed','name']
-    streets['from'] = "NaN"
-    streets['to'] = "NaN"
+    streets_gdf['from'] = "NaN"
+    streets_gdf['to'] = "NaN"
     
     # creating the dataframes
     for n, i in enumerate(columns): 
@@ -153,10 +155,10 @@ def get_fromSHP(directory, epsg, crs, area = None, roadType_field = None, direct
         
         # removing Z coordinates (assuming a planar graph)
         line_coords = list(row[index_geo].coords)
-        from_node = coord[0][0:2]
-        to_node = coord[-1][0:2]
+        from_node = line_coords[0][0:2]
+        to_node = line_coords[-1][0:2]
                 
-        for i in range(0, len(line_coord)):
+        for i in range(0, len(line_coords)):
             point = line_coords[i][0:2]
             new_line.append(point)
 
@@ -208,8 +210,8 @@ def reset_index_gdf(nodes_gdf, edges_gdf):
     """
     
     edges_gdf = edges_gdf.rename(columns = {'u':'old_u', 'v':'old_v'})
-    nodes_gdf = nodes_gdf.reset_index(drop = False)
-    nodes_gdf['old_nodeID'] = nodes_gdf['index'].astype('int64')
+    nodes_gdf['old_nodeID'] = nodes_gdf.index.values.astype('int64')
+    nodes_gdf = nodes_gdf.reset_index(drop = True)
     nodes_gdf['nodeID'] = nodes_gdf.index.values.astype('int64')
     
     edges_gdf = pd.merge(edges_gdf, nodes_gdf[['old_nodeID', 'nodeID']], how='left', left_on="old_u", right_on="old_nodeID")
@@ -218,7 +220,7 @@ def reset_index_gdf(nodes_gdf, edges_gdf):
     edges_gdf = edges_gdf.rename(columns = {'nodeID':'v'})
 
     edges_gdf.drop(['old_u', 'old_nodeID_x', 'old_nodeID_y', 'old_v'], axis = 1, inplace = True)
-    nodes_gdf.drop(['old_nodeID', 'index'], axis = 1, inplace = True)
+    nodes_gdf.drop(['old_nodeID', 'index'], axis = 1, inplace = True, errors = 'ignore')
     edges_gdf = edges_gdf.reset_index(drop=True)
     edges_gdf['streetID'] = edges_gdf.index.values.astype(int)
     
@@ -241,8 +243,6 @@ def double_nodes(nodes_gdf, edges_gdf):
     # the index of nodes_gdf has to be nodeID
     if list(nodes_gdf.index.values) != list(nodes_gdf.nodeID.values): nodes_gdf.index =  nodes_gdf.nodeID
     nodes_gdf, edges_gdf =  nodes_gdf.copy(), edges_gdf.copy()
-    
-    print('Eliminating duplicate geometries - nodes..')
     sindex = nodes_gdf.sindex
     
     # detecting duplicate geometries
@@ -284,7 +284,6 @@ def fix_dead_ends(nodes_gdf, edges_gdf):
     nodes_gdf =  nodes_gdf.copy()
     edges_gdf = edges_gdf.copy()
     
-    print('Removing dead ends..')
     dd_u = dict(edges_gdf['u'].value_counts())
     dd_v = dict(edges_gdf['v'].value_counts())
     dd = {k: dd_u.get(k, 0) + dd_v.get(k, 0) for k in set(dd_u) | set(dd_v)}
@@ -341,9 +340,7 @@ def edges_simplified(edges_gdf):
     edges_gdf['code'][edges_gdf['v'] < edges_gdf['u']] = edges_gdf.v.astype(str)+"-"+edges_gdf.u.astype(str)
     dd = dict(edges_gdf['code'].value_counts())
     dd = {k: v for k, v in dd.items() if v > 1}
-    if len(dd) > 0: 
-        print("Potential duplicate edges: ", len(dd))
-        simplified = False
+    if len(dd) > 0: simplified = False
 
     return(simplified)
 
@@ -361,9 +358,7 @@ def simplify_graph(nodes_gdf, edges_gdf):
     GeoDataFrames
     """
     
-    print('Removing pseudo-nodes..')
     nodes_gdf, edges_gdf = nodes_gdf.copy(), edges_gdf.copy()
-    edges_gdf = edges_gdf[edges_gdf.highway != 'primary_link']
     
     # keeping only one item per node and counting its "appearances"
     dd_u, dd_v = dict(edges_gdf['u'].value_counts()), dict(edges_gdf['v'].value_counts())
@@ -374,7 +369,11 @@ def simplify_graph(nodes_gdf, edges_gdf):
     if len(to_edit) == 0: return(nodes_gdf, edges_gdf)
     to_edit_list = list(to_edit.keys())
     for nodeID in to_edit_list:
-        tmp = edges_gdf[(edges_gdf['u'] == nodeID) | (edges_gdf['v'] == nodeID)].copy()           
+        tmp = edges_gdf[(edges_gdf['u'] == nodeID) | (edges_gdf['v'] == nodeID)].copy()    
+        if len(tmp) == 0: 
+            continue
+            nodes_gdf.drop(nodeID, axis = 0, inplace = True)
+        if len(tmp) == 1: continue
         index_first = tmp.iloc[0].name # first segment index
         index_second = tmp.iloc[1].name # second segment index
         
@@ -415,11 +414,13 @@ def simplify_graph(nodes_gdf, edges_gdf):
         merged_line = LineString([coor for coor in new_line]) 
         edges_gdf.set_value(index_first, 'geometry', merged_line)
         
+        if edges_gdf.loc[index_second]['pedestrian'] == True: edges_gdf.set_value(index_first, 'pedestrian', 1)
         # dropping the second segment, as the new geometry was assigned to the first edge
         edges_gdf.drop(index_second, axis = 0, inplace = True)
         nodes_gdf.drop(nodeID, axis = 0, inplace = True)
     
     return(nodes_gdf, edges_gdf)
+
 
 def clean_network(nodes_gdf, edges_gdf, dead_ends = False):
     """
@@ -438,23 +439,31 @@ def clean_network(nodes_gdf, edges_gdf, dead_ends = False):
     
     nodes_gdf, edges_gdf =  nodes_gdf.copy(), edges_gdf.copy()
     nodes_gdf, edges_gdf = double_nodes(nodes_gdf, edges_gdf)
-
-    index_key = edges_gdf.columns.get_loc("key")+1
-    index_type = edges_gdf.columns.get_loc("highway")+1
+    
+    nodes_gdf.set_index('nodeID', drop = False, inplace = True, append = False)
+    del nodes_gdf.index.name
+    
     index_u, index_v = edges_gdf.columns.get_loc("u")+1, edges_gdf.columns.get_loc("v")+1
     index_geo = edges_gdf.columns.get_loc("geometry")+1
+    
     edges_gdf = edges_gdf[edges_gdf['u'] != edges_gdf['v']] #eliminate node-lines
     edges_gdf.sort_index(inplace = True)  
-    
-    print('Cleaning and simplyfing network:')
     edges_gdf['code'], edges_gdf['coords'] = None, None
+    
+    
+    if 'highway' in edges_gdf.columns:
+        edges_gdf['pedestrian'] = 0
+        to_remove = ['primary_link', 'steps', 'elevator', 'bridleway']  
+        edges_gdf = edges_gdf[~edges_gdf.highway.isin(to_remove)]
+        pedestrian = ['footway', 'pedestrian', 'living_street', 'path']
+        edges_gdf['pedestrian'][edges_gdf.highway.isin(pedestrian)] = 1
+    
     cycle = 0
     
     while ((not edges_simplified(edges_gdf)) | (not nodes_simplified(edges_gdf))):
 
         processed = []
         edges_gdf['length'] = edges_gdf['geometry'].length # recomputing length, to account for small changes
-        print('Cycle nr. ', cycle, '=============')
         cycle += 1
         
         # Assigning codes based on the edge's nodes. 
@@ -468,18 +477,16 @@ def clean_network(nodes_gdf, edges_gdf, dead_ends = False):
             list(x.coords)[::-1] for x in edges_gdf.geometry]
         
         # dropping duplicate-geometries Edges
-        print('Eliminating duplicate geometries - edges..')
         G = edges_gdf['geometry'].apply(lambda geom: geom.wkb)
         edges_gdf = edges_gdf.loc[G.drop_duplicates().index]
         
         # dropping edges with same geometry but with coords in different orders (depending on their directions)    
         edges_gdf['tmp'] = edges_gdf['coords'].apply(tuple, 1)
         edges_gdf.drop_duplicates(['tmp'], keep = 'first', inplace = True)
-        
-        print('Checking lines with same u-v combination of nodes..')
+      
         dd = dict(edges_gdf['code'].value_counts())
         dd = {k: v for k, v in dd.items() if v > 1} # keeping u-v combinations that appear more than once
-        
+        print('possible double edges', len(dd))
         # iterate through possible double edges for each specific combination of possible duplicates
         for key, value in dd.items():
             tmp = edges_gdf[edges_gdf.code == key].copy()
@@ -493,28 +500,46 @@ def clean_network(nodes_gdf, edges_gdf, dead_ends = False):
                 if rowC[0] == index_line: continue
                 uC, vC, geo_lineC, index_lineC = rowC[index_u], rowC[index_v], rowC[index_geo], rowC[0] 
                 
-                # if this edge is 20% longer than the edge identified in the outer loop, delete it
-                if (geo_lineC.length > (geo_line.length * 1.10)):
-                    edges_gdf.drop(index_lineC, axis = 0, inplace = True) 
-                    continue
-                
+                # if this edge is 10% longer than the edge identified in the outer loop, delete it
+                if (geo_lineC.length > (geo_line.length * 1.30)): pass
                 # else draw a center-line, replace the geometry of the outer-loop segment with the CL, drop the segment of the inner-loop
                 else:
-                    cl = uf.center_line(u, v, uC, vC, geo_line, geo_lineC)
+                    cl = uf.center_line(geo_line, geo_lineC)
                     edges_gdf.set_value(index_line,'geometry', cl)
-                    edges_gdf.drop(index_lineC, axis = 0, inplace = True)
-
-        # dead-ends and                                  
+                
+                if edges_gdf.loc[index_lineC]['pedestrian'] == 1: edges_gdf.set_value(index_line,'pedestrian', 1)  
+                edges_gdf.drop(index_lineC, axis = 0, inplace = True)
+        
+         # keeps nodes which are actually used by the edges in the geodataframe
+        to_keep = list(set(list(edges_gdf['u'].unique()) + list(edges_gdf['v'].unique())))
+        nodes_gdf = nodes_gdf[nodes_gdf['nodeID'].isin(to_keep)]
+        # dead-ends and simplify                             
         if dead_ends: nodes_gdf, edges_gdf = fix_dead_ends(nodes_gdf, edges_gdf)
         nodes_gdf, edges_gdf = simplify_graph(nodes_gdf, edges_gdf)  
     
-    # keeps nodes which are actually used by the edges in the geodataframe
-    to_keep = list(set(list(edges_gdf['u'].unique()) + list(edges_gdf['v'].unique())))
-    nodes_gdf = nodes_gdf[nodes_gdf['nodeID'].isin(to_keep)]
+    if dead_ends: nodes_gdf, edges_gdf = fix_dead_ends(nodes_gdf, edges_gdf)
+    nodes_gdf, edges_gdf = simplify_graph(nodes_gdf, edges_gdf)  
     
     edges_gdf.drop(['code', 'coords', 'tmp'], axis = 1, inplace = True, errors = 'ignore')
+    
     nodes_gdf['nodeID'] = nodes_gdf.nodeID.astype(int)
-    print("Done all =========")  
+    nodes_gdf, edges_gdf = correct_edges(nodes_gdf, edges_gdf)
+    
+    # removing islands of unconnected nodes
+#     Ng = graph_fromGDF(nodes_gdf, edges_gdf, 'nodeID')
+#     sub_graphs = nx.connected_component_subgraphs(Ng)
+#     max_nodes = 0
+#     for i, sg in enumerate(sub_graphs):
+#         if len(sg.nodes) > max_nodes: max_nodes = len(sg.nodes)
+#     for i, sg in enumerate(sub_graphs):
+#         if len(sg.nodes()) < max_nodes: 
+#             for n in sg.nodes(): nodes_gdf.drop([n], axis = 0, inplace = True)
+            
+#     edges_gdf = edges_gdf[(edges_gdf.u.isin(nodes_gdf.nodeID)) & (edges_gdf.v.isin(nodes_gdf.nodeID))]
+
+    edges_gdf.set_index('streetID', drop = False, inplace = True, append = False)
+    del edges_gdf.index.name
+    print("Done after ", cycle, " cycles")  
     
     return(nodes_gdf, edges_gdf)
 
@@ -538,6 +563,7 @@ def correct_edges(nodes_gdf, edges_gdf):
     index_geo = edges_gdf.columns.get_loc("geometry")+1 
     
     for row in edges_gdf.itertuples():
+
         u = nodes_gdf.loc[row[index_u]]['nodeID']
         v = nodes_gdf.loc[row[index_v]]['nodeID']
         line_coords = list(row[index_geo].coords)
@@ -553,7 +579,50 @@ def correct_edges(nodes_gdf, edges_gdf):
 
 ## Obtaining graph ###############
 
-def graph_fromGDF(nodes_gdf, edges_gdf, nodes_attributes, edges_costs):
+def graph_fromGDF(nodes_gdf, edges_gdf, nodeID):
+    """
+    It creates from two geopandas dataframes (street junctions and street segments) a NetworkX graph, passing by a OSMnx function.
+    In the lists 'nodes_attributes' and 'edges_costs' please specify attributes that you want to preserve and store in the graph
+    representation.
+    
+    Parameters
+    ----------
+    nodes_gdf, edges_gdf: GeoDataFrames, nodes and street segments  
+    nodes_attributes, edges_costs: lists
+    
+    Returns
+    -------
+    GeoDataFrames
+    """
+
+    nodes_gdf.set_index(nodeID, drop = False, inplace = True, append = False)
+    del nodes_gdf.index.name
+    if 'key' in edges_gdf.columns: edges_gdf = edges_gdf[edges_gdf.key == 0].copy()
+    
+    G = nx.Graph()   
+    G.add_nodes_from(nodes_gdf.index)
+    attributes = nodes_gdf.to_dict()
+    
+    for attribute_name in nodes_gdf.columns:
+        if type(nodes_gdf.loc[0][attribute_name]) == list: 
+            attribute_values = {k: v for k, v in attributes[attribute_name].items() if pd.notnull(v)}        
+        # only add this attribute to nodes which have a non-null value for it
+        else: attribute_values = {k: v for k, v in attributes[attribute_name].items() if pd.notnull(v)}
+        nx.set_node_attributes(G, name=attribute_name, values=attribute_values)
+
+    # add the edges and attributes that are not u, v, key (as they're added
+    # separately) or null
+    for _, row in edges_gdf.iterrows():
+        attrs = {}
+        for label, value in row.iteritems():
+            if (label not in ['u', 'v']) and (isinstance(value, list) or pd.notnull(value)):
+                attrs[label] = value
+        G.add_edge(row['u'], row['v'], **attrs)
+    
+    return(G)
+
+
+def multiGraph_fromGDF(nodes_gdf, edges_gdf, nodeID):
     """
     It creates from two geopandas dataframes (street junctions and street segments) a NetworkX graph, passing by a OSMnx function.
     In the lists 'nodes_attributes' and 'edges_costs' please specify attributes that you want to preserve and store in the graph
@@ -569,34 +638,28 @@ def graph_fromGDF(nodes_gdf, edges_gdf, nodes_attributes, edges_costs):
     GeoDataFrames
     """
     
-    # making use of OSMNx
-    nodes_gdf.gdf_name, edges_gdf.gdf_name  = 'Nodes_list', 'Edges_list' 
-    edges_gdf['key'] = 0
-    G = ox.gdfs_to_graph(nodes_gdf, edges_gdf)
+    nodes_gdf.set_index(nodeID, drop = False, inplace = True, append = False)
+    del nodes_gdf.index.name
     
-    # remapping the network in NetworkX
-    # reassigning coordinates
-    t = G.nodes()
-    pos = {}
-    for i, item in enumerate(t): pos[i] = (t[item]['x'],t[item]['y'], t[item]['nodeID'])
-    Ng = nx.Graph() #Empty graph
-    Ng = Ng.to_undirected()
-    Ng.add_nodes_from(pos.keys()) #Add nodes preserving coordinates
+    Mg = nx.MultiGraph()   
+    Mg.add_nodes_from(nodes_gdf.index)
+    attributes = nodes_gdf.to_dict()
+    
+    for attribute_name in nodes_gdf.columns:
+        # only add this attribute to nodes which have a non-null value for it
+        attribute_values = {k:v for k, v in attributes[attribute_name].items() if pd.notnull(v)}
+        nx.set_node_attributes(Mg, name=attribute_name, values=attribute_values)
 
-    for i, item in enumerate(Ng.nodes()):
-        Ng.node[item]['x'] = pos[item][0]
-        Ng.node[item]['y'] = pos[item][1]
-        Ng.node[item]['nodeID'] = pos[item][2]
-        for attribute in nodes_attributes: 
-            Ng.node[item][attribute] = nodes_gdf[attribute][nodes_gdf['nodeID'] == pos[item][2]].tolist()[0]
-                                                                                       
-    for i, item in enumerate(G.edges()):
-        Ng.add_edge(item[0], item[1])
-        Ng[item[0]][item[1]]['streetID'] = G[item[0]][item[1]][0]['streetID']
-        for cost in edges_costs: Ng[item[0]][item[1]][cost] = G[item[0]][item[1]][0][cost]
-        
-    return(Ng)
-
+    # add the edges and attributes that are not u, v, key (as they're added
+    # separately) or null
+    for _, row in edges_gdf.iterrows():
+        attrs = {}
+        for label, value in row.iteritems():
+            if (label not in ['u', 'v', 'key']) and (isinstance(value, list) or pd.notnull(value)):
+                attrs[label] = value
+        Mg.add_edge(row['u'], row['v'], key=row['key'], **attrs)
+      
+    return(Mg)
 ## Building geo-dataframes for dual graph representation ###############
 
 def dual_gdf(nodes_gdf, edges_gdf, crs):
@@ -655,7 +718,7 @@ def dual_gdf(nodes_gdf, edges_gdf, crs):
     nodes_dual['y'] = [y.coords.xy[1][0] for y in centroids_gdf['centroid']]
     
     # creating fictious links between centroids
-    edges_dual = pd.DataFrame(columns=['u','v', 'key', 'geometry', 'length'])
+    edges_dual = pd.DataFrame(columns=['u','v', 'geometry', 'length'])
 
     index_length = nodes_dual.columns.get_loc("length")+1
     index_streetID_nd = nodes_dual.columns.get_loc("streetID")+1
@@ -676,12 +739,12 @@ def dual_gdf(nodes_gdf, edges_gdf, crs):
             # adding a row with u-v, key fixed as 0, Linestring geometry 
             # from the first centroid to the centroid intersecting segment 
             ls = LineString([row[index_geo], nodes_dual.loc[i]['geometry']])
-            edges_dual.loc[-1] = [streetID, i, 0, ls, distance] 
+            edges_dual.loc[-1] = [streetID, i, ls, distance] 
             edges_dual.index = edges_dual.index + 1
             
     edges_dual = edges_dual.sort_index(axis=0)
     geometry = edges_dual['geometry']
-    edges_dual = gpd.GeoDataFrame(edges_dual[['u','v', 'key', 'length']], crs=crs, geometry=geometry)
+    edges_dual = gpd.GeoDataFrame(edges_dual[['u','v', 'length']], crs=crs, geometry=geometry)
 
     index_lineA = edges_dual.columns.get_loc("u")+1
     index_lineB = edges_dual.columns.get_loc("v")+1
@@ -702,41 +765,45 @@ def dual_gdf(nodes_gdf, edges_gdf, crs):
         
     return(nodes_dual, edges_dual)
 
-def get_dual_graph(nodes_dual, edges_dual, edge_costs):
+def get_dual_graph(nodes_dual, edges_dual):
     """
     The function generates a NetworkX graph from dual-nodes and -edges geopandas dataframes.
             
     Parameters
     ----------
     nodes_dual, edges_dual: GeoDataFrames
-    edge_costs: list of edges attributes/costs
+
 
     Returns
     -------
     GeoDataFrames
     """
    
-    nodes_dual.gdf_name = 'Dual_list'
-    Gr = ox.gdfs_to_graph(nodes_dual, edges_dual)
-    n = Gr.nodes()
-    pos = {}
-
-    for l, item in enumerate(n): pos[l] = (n[l]['x'], n[l]['y'], n[l]['streetID'])
-        
-    DG = nx.Graph() #Empty graph
-    DG = DG.to_undirected()
-    DG.add_nodes_from(pos.keys()) # Add nodes preserving coordinates
+    nodes_dual.set_index('streetID', drop = False, inplace = True, append = False)
+    del nodes_dual.index.name
+    edges_dual.u = edges_dual.u.astype(int)
+    edges_dual.v = edges_dual.v.astype(int)
     
-    for i, item in enumerate(DG.nodes()):
-        DG.node[i]['x']=pos[i][0]
-        DG.node[i]['y']=pos[i][1]
-        DG.node[i]['streetID']=pos[i][2]
+    Dg = nx.Graph()   
+    Dg.add_nodes_from(nodes_dual.index)
+    attributes = nodes_dual.to_dict()
+    
+    for attribute_name in nodes_dual.columns:
+        # only add this attribute to nodes which have a non-null value for it
+        attribute_values = {k:v for k, v in attributes[attribute_name].items() if pd.notnull(v)}
+        nx.set_node_attributes(Dg, name=attribute_name, values=attribute_values)
+
+    # add the edges and attributes that are not u, v, key (as they're added
+    # separately) or null
+    for _, row in edges_dual.iterrows():
+        attrs = {}
+        for label, value in row.iteritems():
+            if (label not in ['u', 'v']) and (isinstance(value, list) or pd.notnull(value)):
+                attrs[label] = value
+        Dg.add_edge(row['u'], row['v'], **attrs)
+
         
-    for i, item in enumerate(Gr.edges()):
-        DG.add_edge(item[0], item[1])
-        for cost in edge_costs: DG[item[0]][item[1]][cost] = Gr[item[0]][item[1]][0][cost]
-        
-    return(DG)
+    return(Dg)
 
 def dual_id_dict(dict_values, G, nodeAttribute):
     """
@@ -822,7 +889,7 @@ def natural_roads(streetID, naturalID, direction, nodes_gdf, edges_gdf):
     
     # No natural continuations
     if (len(angles) == 0):
-        edges_gdf.set_value(row[0], 'naturalID', naturalID)
+        edges_gdf.set_value(streetID, 'naturalID', naturalID)
         return
    
     # selecting the best continuation and continuing in its direction
@@ -831,8 +898,8 @@ def natural_roads(streetID, naturalID, direction, nodes_gdf, edges_gdf):
                                             
         # taking the streetID of the segment which form the gentlest angle with the segment examined
         matchID = angles_sorted[0] 
-        edges_gdf.set_value(row[0], 'naturalID', naturalID)
-        natural_roads(matchID, natural_id, directions_dict[matchID], nodes_gdf, edges_gdf)                    
+        edges_gdf.set_value(streetID, 'naturalID', naturalID)
+        natural_roads(matchID, naturalID, directions_dict[matchID], nodes_gdf, edges_gdf)                    
                                                                                     
 def run_natural_roads(nodes_gdf, edges_gdf): 
     """
@@ -849,6 +916,8 @@ def run_natural_roads(nodes_gdf, edges_gdf):
     GeoDataFrames
     """
     # only before starting the loop - the function is also called within the loop
+    index_nID = edges_gdf.columns.get_loc("naturalID")+1
+    
     
     if (not nodes_simplified(edges_gdf)) | (not edges_simplified(edges_gdf)): raise GraphError('The graph is not simplified!')
     edges_gdf['naturalID'] = 0
@@ -858,13 +927,32 @@ def run_natural_roads(nodes_gdf, edges_gdf):
     
     for row in edges_gdf.itertuples():
         if (row[index_nID] > 0): continue # if already assigned to a natural road
-        snf.natural_roads(row[0], naturalID, "fr", nodes_gdf, edges_gdf) 
-        snf.natural_roads(row[0], naturalID, "to", nodes_gdf, edges_gdf) 
+        natural_roads(row[0], naturalID, "fr", nodes_gdf, edges_gdf) 
+        natural_roads(row[0], naturalID, "to", nodes_gdf, edges_gdf) 
         naturalID = naturalID + 1
                                             
-    return(nodes_gdf, streets_gdf)
+    return(nodes_gdf, edges_gdf)
     
 ## Centrality functions ###############
+
+def nodes_dict(G):
+    """
+    it creates a dictionary where keys represent the id of the node, the item is a tuple of coordinates
+    
+    Parameters
+    G: NetworkX graph
+    ----------
+    """
+    nodes_list = G.nodes()
+    nodes_dict = {}
+
+    for i, item in enumerate(nodes_list):
+        cod = item
+        x = nodes_list[item]['x']
+        y = nodes_list[item]['y']
+        nodes_dict[cod] = (x,y)
+    
+    return nodes_dict
 
 def straightness_centrality(G, weight, normalized = True):
     """
@@ -909,7 +997,7 @@ def straightness_centrality(G, weight, normalized = True):
 
     return straightness_centrality
 
-def weight_nodes(nodes_gdf,  points_gdf, G, buffer, name):
+def weight_nodes(nodes_gdf, points_gdf, G, buffer, name):
     
     """
     Given a nodes and a services/points geodataframes, the function assign an attribute to nodes in the graph G (prevously derived from 
@@ -936,7 +1024,7 @@ def weight_nodes(nodes_gdf,  points_gdf, G, buffer, name):
         fil = g.buffer(buffer)
         possible_matches_index = list(sindex.intersection(fil.bounds))
         possible_matches = points_gdf.iloc[possible_matches_index]
-        precise_matches = possible_matches[possible_matches.intersects(fil.bounds)]
+        precise_matches = possible_matches[possible_matches.intersects(fil)]
         weight = len(precise_matches)
         nodes_gdf.set_value(row[0], name, weight)
 

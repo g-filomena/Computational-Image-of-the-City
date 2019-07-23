@@ -561,7 +561,8 @@ def compute_scores(buildings_gdf):
     
     # computing scores
     buildings_gdf['vScore'] = buildings_gdf['fac_sc']*0.30 + buildings_gdf['height_sc']*0.20 + buildings_gdf['vis']*0.5
-    buildings_gdf['sScore'] = buildings_gdf['area_sc']*0.30 + buildings_gdf['neigh_sc']*0.20 + buildings_gdf['a_vis_sc']*0.30     +buildings_gdf['road_sc']*0.20
+    buildings_gdf['sScore'] = (buildings_gdf['area_sc']*0.30 + buildings_gdf['neigh_sc']*0.20 + buildings_gdf['a_vis_sc']*0.30      
+                                +buildings_gdf['road_sc']*0.20)
     
     # rescaling
     col = ['vScore', 'sScore']
@@ -577,7 +578,7 @@ def compute_scores(buildings_gdf):
 
 
 
-def local_scores(buildings_gdf, buffer = 800):
+def local_scores(buildings_gdf, buffer = 1500):
     """
     The function compute landmarkness at the local level. Here the components' weights are different from the ones used to calculate the
     global score. The buffer parameter indicates the extent of the area considered to rescale the landmarkness local score.
@@ -596,6 +597,8 @@ def local_scores(buildings_gdf, buffer = 800):
     spatial_index = buildings_gdf.sindex # spatial index
     index_geometry = buildings_gdf.columns.get_loc("geometry")+1
     buildings_gdf['lScore'] = 0.0
+    buildings_gdf['vScore_l'] = 0.0
+    buildings_gdf['sScore_l'] = 0.0
     
     col = ['area', 'fac', 'height', 'prag', 'a_vis','cult', 'vis']
     col_inverse = ['neigh', 'road']
@@ -604,7 +607,7 @@ def local_scores(buildings_gdf, buffer = 800):
     for row in buildings_gdf.itertuples():
         b = row[index_geometry].centroid.buffer(buffer)
         possible_matches_index = list(spatial_index.intersection(b.bounds))
-        possible_matches = buildings_gdf.iloc[possible_matches_index]
+        possible_matches = buildings_gdf.iloc[possible_matches_index].copy()
         LL = possible_matches[possible_matches.intersects(b)]
         
         # rescaling the values 
@@ -612,14 +615,19 @@ def local_scores(buildings_gdf, buffer = 800):
         for i in col_inverse: uf.scaling_columnDF(LL, i, inverse = True)
         
         # and recomputing scores
-        LL['vScore'] =  LL['fac_sc']*0.30 + LL['height_sc']*0.20 + LL['vis']*0.5
-        LL['sScore'] =  LL['area_sc']*0.30 + LL['neigh_sc']*0.20 + LL['a_vis_sc']*0.3 + LL['road_sc']*0.20
-        LL['lScore'] =  LL['vScore_sc']*0.20 + LL['sScore_sc']*0.30 + LL['cult_sc']*0.10 + LL['prag_sc']*0.40
+        LL['vScore_l'] =  LL['fac_sc']*0.20 + LL['height_sc']*0.40 + LL['vis']*0.40
+        LL['sScore_l'] =  LL['area_sc']*0.35 + LL['neigh_sc']*0.40 + LL['road_sc']*0.25 + LL['a_vis_sc']*0.00 
+        
+        col_rs = ['vScore_l', 'sScore_l']
+        for i in col_rs: uf.scaling_columnDF(LL, i)
+        
+        LL['lScore'] =  LL['vScore_l_sc']*0.20 + LL['sScore_l_sc']*0.40 + LL['cult_sc']*0.10 + LL['prag_sc']*0.30
         
         # assigning the so obtined score to the building
         localScore = float("{0:.3f}".format(LL['lScore'].loc[row[0]]))
         buildings_gdf.set_value(row[0], 'lScore', localScore)
-        
+    
+    uf.scaling_columnDF(buildings_gdf, 'lScore')
     return buildings_gdf
 
 

@@ -387,6 +387,65 @@ def plot_lines_aside(gdf, gdf_c = None, classes = 7, lw = 0.9, columnA = None, c
 
     plt.show()
     
+    
+def plot_multiplex(M):
+    node_Xs = [float(node['x']) for node in M.node.values()]
+    node_Ys = [float(node['y']) for node in M.node.values()]
+    node_Zs = np.array([float(node['z'])*2000 for node in M.node.values()])
+    node_size = []
+    size = 1
+    node_color = []
+
+    for i, d in M.nodes(data=True):
+        if d['station'] == True:
+            node_size.append(9)
+            node_color.append('#ec1a30')
+        elif d['z'] == 1:
+            node_size.append(0.0)
+            node_color.append('#ffffcc')
+        elif d['z'] == 0:
+            node_size.append(8)
+            node_color.append('#ff8566')
+
+    lines = []
+    line_width = []
+    lwidth = 0.4
+    
+    # edges
+    for u, v, data in M.edges(data=True):
+        
+        xs, ys = data['geometry'].xy
+        zs = [M.node[u]['z']*2000 for i in range(len(xs))]
+        if data['layer'] == 'intra_layer': zs = [0, 2000]
+        
+        lines.append([list(a) for a in zip(xs, ys, zs)])
+        if data['layer'] == 'intra_layer': line_width.append(0.2)
+        elif data['pedestrian'] == 1: line_width.append(0.1)
+        else: line_width.append(lwidth)
+
+    fig_height = 40
+    lc = Line3DCollection(lines, linewidths=line_width, alpha=1, color="#ffffff", zorder=1)
+
+    west, south, east, north = multiplex_edges.total_bounds
+    bbox_aspect_ratio = (north - south) / (east - west)*1.5
+    fig_width = fig_height +90 / bbox_aspect_ratio/1.5
+    fig = plt.figure(figsize=(15, 15))
+    ax = fig.gca(projection='3d')
+    ax.add_collection3d(lc)
+    ax.scatter(node_Xs, node_Ys, node_Zs, s=node_size, c=node_color, zorder=2)
+    ax.set_ylim(south, north)
+    ax.set_xlim(west, east)
+    ax.set_zlim(0, 2500)
+    ax.axis('off')
+    ax.margins(0)
+    ax.tick_params(which='both', direction='in')
+    fig.canvas.draw()
+    ax.set_facecolor('black')
+    ax.set_aspect('equal')
+
+    return(fig)
+            
+    
 def overlap_lines(gdf, gdf_c, lw = 0.9, title = 'Plot', f = 15):
     
     # background black or white - basic settings 
@@ -496,48 +555,60 @@ def ang_geoline(geolineA, geolineB, degree = False, deflection = False):
     coordsA = list(geolineA.coords)
     coordsB = list(geolineB.coords)   
 
-    x_fA = float("{0:.10f}".format(coordsA[0][0]))
-    y_fA = float("{0:.10f}".format(coordsA[0][1]))
-    x_tA = float("{0:.10f}".format(coordsA[-1][0]))
-    y_tA = float("{0:.10f}".format(coordsA[-1][1]))
+    x_originA = float("{0:.10f}".format(coordsA[0][0]))
+    y_originA = float("{0:.10f}".format(coordsA[0][1]))
+    x_secondA = float("{0:.10f}".format(coordsA[1][0]))
+    y_secondA = float("{0:.10f}".format(coordsA[1][1]))
     
-    x_fB = float("{0:.10f}".format(coordsB[0][0]))
-    y_fB = float("{0:.10f}".format(coordsB[0][1]))
-    x_tB = float("{0:.10f}".format(coordsB[-1][0]))
-    y_tB = float("{0:.10f}".format(coordsB[-1][1]))
+    x_destinationA = float("{0:.10f}".format(coordsA[-1][0]))
+    y_destinationA = float("{0:.10f}".format(coordsA[-1][1]))
+    x_secondlastA = float("{0:.10f}".format(coordsA[-2][0]))
+    y_secondlastA = float("{0:.10f}".format(coordsA[-2][1]))
+    
+    x_originB = float("{0:.10f}".format(coordsB[0][0]))
+    y_originB = float("{0:.10f}".format(coordsB[0][1]))
+    x_secondB = float("{0:.10f}".format(coordsB[1][0]))
+    y_secondB = float("{0:.10f}".format(coordsB[1][1]))
+    
+    x_destinationB = float("{0:.10f}".format(coordsB[-1][0]))
+    y_destinationB = float("{0:.10f}".format(coordsB[-1][1]))
+    x_secondlastB = float("{0:.10f}".format(coordsB[-2][0]))
+    y_secondlastB = float("{0:.10f}".format(coordsB[-2][1]))
     
     if deflection == True:
-        if ((x_tA, y_tA) == (x_tB, y_tB)):
-            lineA = ((x_fA, y_fA),(x_tA,y_tA))
-            lineB = ((x_tB, y_tB),(x_fB, y_fB))
+        if ((x_destinationA, y_destinationA) == (x_destinationB, y_destinationB)):
+            lineA = ((x_secondlastA, y_secondlastA), (x_destinationA, y_destinationA))
+            lineB = ((x_destinationB, y_destinationB), (x_secondlastB, y_secondlastB))
 
-        elif ((x_tA, y_tA) == (x_fB, y_fB)):
-            lineA = ((x_fA, y_fA),(x_tA,y_tA))
-            lineB = ((x_fB, y_fB),(x_tB, y_tB))
+        elif ((x_destinationA, y_destinationA) == (x_originB, y_originB)):
+            lineA = ((x_secondlastA, y_secondlastA), (x_destinationA, y_destinationA))
+            lineB = ((x_originB, y_originB), (x_secondB, y_secondB))
 
-        elif ((x_fA, y_fA) == (x_fB, y_fB)):
-            lineA = ((x_tA, y_tA),(x_fA,y_fA))
-            lineB = ((x_fB, y_fB),(x_tB, y_tB))
+        elif ((x_originA, y_originA) == (x_originB, y_originB)):
+            lineA = ((x_secondA, y_secondA), (x_originA, y_originA))
+            lineB = ((x_originB, y_originB), (x_secondB, y_secondB))
 
-        else: #(from_node == to_node2)
-            lineA = ((x_tA, y_tA),(x_fA,y_fA))
-            lineB = ((x_tB, y_tB),(x_fB, y_fB))
+        elif ((x_originA, y_originA) == (x_destinationB, y_destinationB)):
+            lineA = ((x_secondA, y_secondA), (x_originA, y_originA))
+            lineB = ((x_destinationB, y_destinationB), (x_secondlastB, y_secondlastB))
+            
+        else: print('issue')
     else:
-        if ((x_tA, y_tA) == (x_tB, y_tB)):
-            lineA = ((x_tA,y_tA), (x_fA, y_fA))
-            lineB = ((x_tB, y_tB),(x_fB, y_fB))
+        if ((x_destinationA, y_destinationA) == (x_destinationB, y_destinationB)):
+            lineA = ((x_destinationA, y_destinationA), (x_originA, y_originA))
+            lineB = ((x_destinationB, y_destinationB), (x_originB, y_originB))
 
-        elif ((x_tA, y_tA) == (x_fB, y_fB)):
-            lineA = ((x_tA,y_tA), (x_fA, y_fA))
-            lineB = ((x_tB, y_tB),(x_fB, y_fB))
+        elif ((x_destinationA, y_destinationA) == (y_originB, y_originB)):
+            lineA = ((x_destinationA, y_destinationA), (x_originA, y_originA))
+            lineB = ((y_originB, y_originB), (x_destinationB, y_destinationB))
 
-        elif ((x_fA, y_fA) == (x_fB, y_fB)):
-            lineA = ((x_fA,y_fA),(x_tA, y_tA))
-            lineB = ((x_fB, y_fB),(x_tB, y_tB))
+        elif ((x_originA, y_originA) == (y_originB, y_originB)):
+            lineA = ((x_originA, y_originA), (x_destinationA, y_destinationA))
+            lineB = ((x_originB, y_originB), (x_destinationB, y_destinationB))
 
-        else: #(from_node == to_node2)
-            lineA = ((x_fA,y_fA),(x_tA, y_tA))
-            lineB = ((x_tB, y_tB),(x_fB, y_fB)) 
+        else: #(originA == destinationB)
+            lineA = ((x_originA, y_originA), (x_destinationA, y_destinationA))
+            lineB = ((x_destinationB, y_destinationB),(x_originB, y_originB)) 
     
     # Get nicer vector form
     vA = [(lineA[0][0]-lineA[1][0]), (lineA[0][1]-lineA[1][1])]
@@ -656,9 +727,9 @@ def print_row(index_column):
     sys.stdout.write('\r')
     sys.stdout.write("at row: "+ str(index_column))
     sys.stdout.flush()
-    sleep(0.05)
+    sleep(0.01)
     
-    
+
             
             
             

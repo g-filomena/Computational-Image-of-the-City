@@ -790,6 +790,7 @@ def get_dual_graph(nodes_dual, edges_dual):
     
     for attribute_name in nodes_dual.columns:
         # only add this attribute to nodes which have a non-null value for it
+        if attribute_name == 'intersecting': continue
         attribute_values = {k:v for k, v in attributes[attribute_name].items() if pd.notnull(v)}
         nx.set_node_attributes(Dg, name=attribute_name, values=attribute_values)
 
@@ -805,7 +806,7 @@ def get_dual_graph(nodes_dual, edges_dual):
         
     return(Dg)
 
-def dual_id_dict(dict_values, G, nodeAttribute):
+def dual_id_dict(dict_values, graph, nodeAttribute):
     """
     It could be used when one deals with a dual graph and wants to reconnect some analysis conducted on this representation to the
     analysis conducted on the primal graph. For instance, it takes the dictionary containing the betweennes-centrality values of the
@@ -916,13 +917,14 @@ def run_natural_roads(nodes_gdf, edges_gdf):
     GeoDataFrames
     """
     # only before starting the loop - the function is also called within the loop
+    edges_gdf['naturalID'] = 0
     index_nID = edges_gdf.columns.get_loc("naturalID")+1
     
-    
-    if (not nodes_simplified(edges_gdf)) | (not edges_simplified(edges_gdf)): raise GraphError('The graph is not simplified!')
-    edges_gdf['naturalID'] = 0
+#     if (not nodes_simplified(edges_gdf)) | (not edges_simplified(edges_gdf)): raise GraphError('The graph is not simplified!')
+   
     edges_gdf.index = edges_gdf.streetID
     nodes_gdf.index = nodes_gdf.nodeID
+    
     naturalID = 1  
     
     for row in edges_gdf.itertuples():
@@ -1077,40 +1079,63 @@ def reach_centrality(G, weight, radius, attribute):
 
     return reach_centrality
 
-def local_betweenness_centrality(G, weight, radius):
-    """
-    The function computes betweenness centrality at the local level.
-    ## Still to be optimised. 
+# def local_betweenness_centrality(G, weight, radius):
+#     """
+#     The function computes betweenness centrality at the local level.
+#     ## Still to be optimised. 
       
-    Parameters
-    ----------
-    G: networkx multigraph
-    weight: string, edges weight
-    radius: float, distance from node, within local betweenness is computed  
+#     Parameters
+#     ----------
+#     G: networkx multigraph
+#     weight: string, edges weight
+#     radius: float, distance from node, within local betweenness is computed  
     
-    Returns
-    -------
-    dictionary
-    """
+#     Returns
+#     -------
+#     dictionary
+#     """
            
-    path_length = functools.partial(nx.single_source_dijkstra_path_length, weight = weight)
+#     path_length = functools.partial(nx.single_source_dijkstra_path_length, weight = weight)
 
-    nodes = G.nodes()
-    cb = {}
-    coord_nodes = nodes_dict(G)
+#     nodes = G.nodes()
+#     cb = {}
+#     coord_nodes = nodes_dict(G)
 
-    for obj in nodes:
-        sp = path_length(G,obj)
-        sp_radium = dict((k, v) for k, v in sp.items() if v <= radius)
+#     for obj in nodes:
+#         sp = path_length(G,obj)
+#         sp_radium = dict((k, v) for k, v in sp.items() if v <= radius)
 
-        to_keep = list(sp_radium.keys())
-        G_small = nx.Graph(G.subgraph(to_keep))
+#         to_keep = list(sp_radium.keys())
+#         G_small = nx.Graph(G.subgraph(to_keep))
         
-        be = nx.betweenness_centrality(G_small, k=None, weight = 'length', normalized=False)
-        cb[obj] = be[obj]
+#         be = nx.betweenness_centrality(G_small, k=None, weight = 'length', normalized=False)
+#         cb[obj] = be[obj]
      
-    return cb
+#     return cb
 	
+    
+def local_betweenness(nodes_gdf, measure = 'Bc', radius = 400):
+    
+    nodes_gdf = nodes_gdf.copy()
+    spatial_index = nodes_gdf.sindex # spatial index
+    index_geometry = nodes_gdf.columns.get_loc("geometry")+1
+    nodes_gdf[measure+'_'+str(radius)] = 0.0
+   
+    # recomputing the scores per each building in relation to its neighbours, in an area whose extent is regulated by 'buffer'
+    for row in nodes_gdf.itertuples():
+        n = row[index_geometry].centroid.buffer(radius)
+        possible_matches_index = list(spatial_index.intersection(n.bounds))
+        possible_matches = nodes_gdf.iloc[possible_matches_index].copy()
+        nn = possible_matches[possible_matches.intersects(n)]
+        
+        # rescaling the values 
+        uf.scaling_columnDF(nn, measure) 
+        # assigning the so obtained score to the node
+        localBc = nn[measure+'_sc'].loc[row[0]]
+        nodes_gdf.set_value(row[0], measure+'_'+str(radius), localBc)
+    
+    return nodes_gdf
+
 
 
     

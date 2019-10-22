@@ -17,6 +17,7 @@ import matplotlib.patches as mpatches
 import sys
 from time import sleep
 pd.set_option('precision', 10)
+from mpl_toolkits.mplot3d.art3d import Line3DCollection
 
 """
 Series of utilies for plotting LineString, Points or Polygons geodataframes, and other operations.
@@ -388,9 +389,9 @@ def plot_lines_aside(gdf, gdf_c = None, classes = 7, lw = 0.9, columnA = None, c
     plt.show()
     
     
-def plot_multiplex(M):
-    node_Xs = [float(node['x']) for node in M.node.values()]
-    node_Ys = [float(node['y']) for node in M.node.values()]
+def plot_multiplex(M, multiplex_edges):
+    node_Xs = [float(node['x']) for node in M.nodes.values()]
+    node_Ys = [float(node['y']) for node in M.nodes.values()]
     node_Zs = np.array([float(node['z'])*2000 for node in M.node.values()])
     node_size = []
     size = 1
@@ -519,18 +520,6 @@ def dot(vA, vB):
 
 
 def get_coord_angle(origin, distance, angle):
-    """
-    Given two LineStrings it computes the deflection angle between them. Returns value in degrees or radians.
-    
-    ----------
-    Parameters
-    geolineA, geolineB: LineString geometries
-    degree: Boolean
-    
-    Returns:
-    ----------
-    float
-    """
 
     (disp_x, disp_y) = (distance * math.sin(math.radians(angle)), distance * math.cos(math.radians(angle)))
     return (origin[0] + disp_x, origin[1] + disp_y)
@@ -592,7 +581,10 @@ def ang_geoline(geolineA, geolineB, degree = False, deflection = False):
             lineA = ((x_secondA, y_secondA), (x_originA, y_originA))
             lineB = ((x_destinationB, y_destinationB), (x_secondlastB, y_secondlastB))
             
-        else: print('issue')
+        else: #no common vertex
+            print(issue)
+#             lineA = ((x_originA, y_originA), (x_destinationA, y_destinationA))
+#             lineB = ((x_originB, y_originB), (x_destinationB, y_destinationB))
     else:
         if ((x_destinationA, y_destinationA) == (x_destinationB, y_destinationB)):
             lineA = ((x_destinationA, y_destinationA), (x_originA, y_originA))
@@ -685,7 +677,7 @@ def center_line(line_geo, line_geoC):
     return(center_line)
 
 
-def dist_to_gdf(point, gpd):
+def dist_to_gdf_point(point, gpd):
     gpd = gpd.copy()
     gpd['Dist'] = gpd.apply(lambda row:  point.distance(row.geometry),axis=1)
     geoseries = gpd.loc[gpd['Dist'].argmin()]
@@ -693,6 +685,13 @@ def dist_to_gdf(point, gpd):
     index = geoseries.name
     return distance, index
 
+def dist_to_gdf_line(geoline, gpd):
+    gpd = gpd.copy()
+    gpd['Dist'] = gpd.apply(lambda row:  geoline.distance(row.geometry),axis=1)
+    geoseries = gpd.loc[gpd['Dist'].argmin()]
+    distance  = geoseries.Dist
+    index = geoseries.name
+    return distance, index
 
 def merge_lines(geolines):
     
@@ -727,8 +726,49 @@ def print_row(index_column):
     sys.stdout.write('\r')
     sys.stdout.write("at row: "+ str(index_column))
     sys.stdout.flush()
-    sleep(0.01)
+    sleep(0.0001)
     
+def merge_disconnected_lines(list_lines):
+    new_line = []
+    for n, i in enumerate(list_lines):
+        coords = list(i.coords)
+        if n < len(list_lines)-1: coords.append(list_lines[n+1].coords[-1])
+        new_line = new_line + coords
+
+    geoline = LineString([coor for coor in new_line])
+    return(geoline)
+ 
+def find_actual_centroid(geoline):    
+    coords = list(geoline.coords)
+    if len(coords) == 2: centroid = geoline.coords[0]       
+    else:
+        if len(coords)%2 == 0:
+            left = int((len(coords)/2)-1)
+            right = int((len(coords)/2)+1)
+            tmp = LineString([coords[left], coords[right]])
+            centroid = tmp.centroid.coords[0]
+        else:
+            centroid_position = int(len(coords)/2)  
+            centroid = coords[centroid_position]
+
+    return(centroid)
+
+    
+def line_at_centroid(geoline, offset):
+    left = geoline.parallel_offset(offset, 'left')
+    right =  geoline.parallel_offset(offset, 'right')
+    
+    if left.geom_type == 'MultiLineString': left = merge_disconnected_lines(left)
+    if right.geom_type == 'MultiLineString': right = merge_disconnected_lines(right)   
+    
+    if (left.is_empty == True) & (right.is_empty == False): left = geoline
+    if (right.is_empty == True) & (left.is_empty == False): right = geoline
+    
+    left_centroid = find_actual_centroid(left)
+    right_centroid = find_actual_centroid(right)
+    
+    fict = LineString([left_centroid, right_centroid])
+    return(fict)
 
             
             

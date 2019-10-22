@@ -103,18 +103,18 @@ def structural_properties(buildings_gdf, obstructions_gdf, street_gdf, buffer = 
         # width and length
         width = min(d)
         length = max(d)
-        buildings_gdf.set_value(row[0], 'width', width)
-        buildings_gdf.set_value(row[0], 'length', length)
+        buildings_gdf.at[row[0], 'width'] =  width
+        buildings_gdf.at[row[0], 'length'] = length
         
         # neighbours
         possible_neigh_index = list(sindex.intersection(buff.bounds))
         possible_neigh = obstructions_gdf.iloc[possible_neigh_index]
         precise_neigh = possible_neigh[possible_neigh.intersects(buff)]
-        buildings_gdf.set_value(row[0], 'neigh', len(precise_neigh))
+        buildings_gdf.at[row[0], 'neigh'] = len(precise_neigh)
         
         # distance from the road
         dist = g.distance(street_network)
-        buildings_gdf.set_value(row[0], 'road', dist)
+        buildings_gdf.at[row[0], 'road'] = dist
     
     #facade area (roughly computed)
     buildings_gdf['fac'] = buildings_gdf['height']*(buildings_gdf.width)
@@ -219,7 +219,7 @@ def advance_visibility(buildings_gdf, obstructions_gdf, radius = 500):
         except:
             pp = poly.buffer(0)
             poly_vis = pp.difference(row[index_geometry])      
-        buildings_gdf.set_value(row[0],'a_vis', poly_vis.area)
+        buildings_gdf.at[row[0],'a_vis'] = poly_vis.area
         
         """
         !! it does not work always - saving the polygon in a GDF containing visibility polygons. 
@@ -232,7 +232,7 @@ def advance_visibility(buildings_gdf, obstructions_gdf, radius = 500):
         except:
             poly_vis = poly_vis
 
-        visibility_polygons.set_value(row[0],'geometry', poly_vis)
+        visibility_polygons.at[row[0],'geometry'] = poly_vis
         
     return buildings_gdf, visibility_polygons
 
@@ -320,7 +320,7 @@ def cultural_meaning(buildings_gdf, cultural_gdf, score = None):
         elif len(precise_matches) == 0: cm = 0
         else: cm = precise_matches[score].sum() # otherwise sum the scores of the intersecting elements
         
-        buildings_gdf.set_value(row[0], 'cult', cm) #cultural meaning
+        buildings_gdf.at[row[0], 'cult'] = cm #cultural meaning
      
     return buildings_gdf
 
@@ -443,7 +443,7 @@ def land_use_from_polygons(buildings_gdf, other_gdf, column, land_use_field):
             except: 
                  continue
                     
-            precise_matches.set_value(row_C[0], 'area', area_intersec)
+            precise_matches.at[row_C[0], 'area'] = area_intersec
         
         # sorting the matches based on the extent of the area of intersection
         pm = precise_matches.sort_values(by='area', ascending=False).reset_index()
@@ -451,7 +451,7 @@ def land_use_from_polygons(buildings_gdf, other_gdf, column, land_use_field):
         # assigning the match land-use category if the area of intersection covers at least 60% of the building's area
         if (pm['area'].loc[0] > (g.area * 0.59)):
             main_use = pm[land_use_field].loc[0]
-            buildings_gdf.set_value(row[0], column, main_use)
+            buildings_gdf.at[row[0], column] = main_use
         else: continue
         
     return buildings_gdf
@@ -492,7 +492,7 @@ def land_use_from_points(buildings_gdf, other_gdf, column, land_use_field):
                                     ascending=False).reset_index()
         
         main_use = use[land_use_field].loc[0] # assigning the most represented land-use value within the building.
-        buildings_gdf.set_value(row[0], column, main_use)
+        buildings_gdf.at[row[0], column] = main_use
                
     return buildings_gdf
 
@@ -532,7 +532,7 @@ def pragmatic_meaning(buildings_gdf, buffer = 200):
         
         # Pj = Nj/N
         Pj = 1-(Nj/precise_matches['nr'].sum()) # inverting the value
-        buildings_gdf.set_value(row[0], 'prag', Pj) 
+        buildings_gdf.at[row[0], 'prag'] = Pj
         
     return buildings_gdf
         
@@ -625,7 +625,7 @@ def local_scores(buildings_gdf, buffer = 1500):
         
         # assigning the so obtined score to the building
         localScore = float("{0:.3f}".format(LL['lScore'].loc[row[0]]))
-        buildings_gdf.set_value(row[0], 'lScore', localScore)
+        buildings_gdf.at[row[0], 'lScore'] = localScore
     
     uf.scaling_columnDF(buildings_gdf, 'lScore')
     return buildings_gdf

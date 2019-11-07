@@ -524,6 +524,127 @@ def get_coord_angle(origin, distance, angle):
     (disp_x, disp_y) = (distance * math.sin(math.radians(angle)), distance * math.cos(math.radians(angle)))
     return (origin[0] + disp_x, origin[1] + disp_y)
 
+def ang_geoline(geolineA, geolineB, degree = False, deflection = False, angular_change = False):
+    
+    """
+    Given two LineStrings it computes the deflection angle between them. Returns value in degrees or radians.
+    
+    ----------
+    Parameters
+    geolineA, geolineB: LineString geometries
+    degree: Boolean
+    deflection: Boolean, if true computes angle of incidence, otherwise angle formed by the two vectors as diverging from the common node.
+    
+    Returns:
+    ----------
+    float
+    """
+    if angular_change == True: deflection = True
+        
+    # extracting coordinates and creates lines
+    coordsA = list(geolineA.coords)
+    coordsB = list(geolineB.coords)   
+
+    x_originA = float("{0:.10f}".format(coordsA[0][0]))
+    y_originA = float("{0:.10f}".format(coordsA[0][1]))
+    x_secondA = float("{0:.10f}".format(coordsA[1][0]))
+    y_secondA = float("{0:.10f}".format(coordsA[1][1]))
+    
+    x_destinationA = float("{0:.10f}".format(coordsA[-1][0]))
+    y_destinationA = float("{0:.10f}".format(coordsA[-1][1]))
+    x_secondlastA = float("{0:.10f}".format(coordsA[-2][0]))
+    y_secondlastA = float("{0:.10f}".format(coordsA[-2][1]))
+    
+    x_originB = float("{0:.10f}".format(coordsB[0][0]))
+    y_originB = float("{0:.10f}".format(coordsB[0][1]))
+    x_secondB = float("{0:.10f}".format(coordsB[1][0]))
+    y_secondB = float("{0:.10f}".format(coordsB[1][1]))
+    
+    x_destinationB = float("{0:.10f}".format(coordsB[-1][0]))
+    y_destinationB = float("{0:.10f}".format(coordsB[-1][1]))
+    x_secondlastB = float("{0:.10f}".format(coordsB[-2][0]))
+    y_secondlastB = float("{0:.10f}".format(coordsB[-2][1]))
+    
+    if (deflection == True) & (angular_change == True):
+        if ((x_destinationA, y_destinationA) == (x_destinationB, y_destinationB)):
+            lineA = ((x_secondlastA, y_secondlastA), (x_destinationA, y_destinationA))
+            lineB = ((x_destinationB, y_destinationB), (x_secondlastB, y_secondlastB))
+
+        elif ((x_destinationA, y_destinationA) == (x_originB, y_originB)):
+            lineA = ((x_secondlastA, y_secondlastA), (x_destinationA, y_destinationA))
+            lineB = ((x_originB, y_originB), (x_secondB, y_secondB))
+
+        elif ((x_originA, y_originA) == (x_originB, y_originB)):
+            lineA = ((x_secondA, y_secondA), (x_originA, y_originA))
+            lineB = ((x_originB, y_originB), (x_secondB, y_secondB))
+
+        elif ((x_originA, y_originA) == (x_destinationB, y_destinationB)):
+            lineA = ((x_secondA, y_secondA), (x_originA, y_originA))
+            lineB = ((x_destinationB, y_destinationB), (x_secondlastB, y_secondlastB))
+            
+        else:  print(issue)
+            
+    if (deflection == True) & (angular_change == False):
+        if ((x_destinationA, y_destinationA) == (x_destinationB, y_destinationB)):
+            lineA = ((x_originA, y_originA), (x_destinationA, y_destinationA))
+            lineB = ((x_destinationB, y_destinationB), (x_originB, y_originB))
+
+        elif ((x_destinationA, y_destinationA) == (x_originB, y_originB)):
+            lineA = ((x_originA, y_originA), (x_destinationA, y_destinationA))
+            lineB = ((x_originB, y_originB), (x_destinationB, y_destinationB))
+
+        elif ((x_originA, y_originA) == (x_originB, y_originB)):
+            lineA = ((x_destinationA, y_destinationA), (x_originA, y_originA))
+            lineB = ((x_originB, y_originB), (x_destinationB, y_destinationB))
+
+        elif ((x_originA, y_originA) == (x_destinationB, y_destinationB)):
+            lineA = ((x_destinationA, y_destinationA), (x_originA, y_originA))
+            lineB = ((x_destinationB, y_destinationB), (x_originB, y_originB))
+
+        else:  print(issue)
+#             lineA = ((x_originA, y_originA), (x_destinationA, y_destinationA))
+#             lineB = ((x_originB, y_originB), (x_destinationB, y_destinationB))
+    else:
+        if ((x_destinationA, y_destinationA) == (x_destinationB, y_destinationB)):
+            lineA = ((x_destinationA, y_destinationA), (x_originA, y_originA))
+            lineB = ((x_destinationB, y_destinationB), (x_originB, y_originB))
+
+        elif ((x_destinationA, y_destinationA) == (y_originB, y_originB)):
+            lineA = ((x_destinationA, y_destinationA), (x_originA, y_originA))
+            lineB = ((y_originB, y_originB), (x_destinationB, y_destinationB))
+
+        elif ((x_originA, y_originA) == (y_originB, y_originB)):
+            lineA = ((x_originA, y_originA), (x_destinationA, y_destinationA))
+            lineB = ((x_originB, y_originB), (x_destinationB, y_destinationB))
+
+        else: #(originA == destinationB)
+            lineA = ((x_originA, y_originA), (x_destinationA, y_destinationA))
+            lineB = ((x_destinationB, y_destinationB),(x_originB, y_originB)) 
+    
+    # Get nicer vector form
+    vA = [(lineA[0][0]-lineA[1][0]), (lineA[0][1]-lineA[1][1])]
+    vB = [(lineB[0][0]-lineB[1][0]), (lineB[0][1]-lineB[1][1])]
+    
+    try:
+        # Get dot prod
+        dot_prod = dot(vA, vB)
+        # Get magnitudes
+        magA = dot(vA, vA)**0.5
+        magB = dot(vB, vB)**0.5
+        # Get cosine value
+        cos_ = dot_prod/magA/magB
+        # Get angle in radians and then convert to degrees
+        angle_rad = math.acos(dot_prod/magB/magA)
+        # Basically doing angle <- angle mod 360
+        angle_deg = math.degrees(angle_rad)%360
+        
+    except:
+        angle_deg = 0
+        angle_rad = 0
+        
+    if degree == True: return angle_deg
+    else: return angle_rad
+    
 def ang_geoline(geolineA, geolineB, degree = False, deflection = False):
     
     """

@@ -122,7 +122,7 @@ def structural_properties(buildings_gdf, obstructions_gdf, street_gdf, buffer = 
     
     return buildings_gdf
 
-def advance_visibility(buildings_gdf, obstructions_gdf, radius = 500):
+def advance_visibility(buildings_gdf, obstructions_gdf, distance = 300):
     """
     It creates a 2d polygon of visibility around each building in 'building_gdf'. The extent of this polygon is assigned as an advance
     visibility rough measure. The polygon is built constructing lines around the centroid, breaking them at obstructions and connecting 
@@ -151,12 +151,7 @@ def advance_visibility(buildings_gdf, obstructions_gdf, radius = 500):
     for row in buildings_gdf.itertuples():
         
         # indicates progress
-        sys.stdout.write('\r')
-        sys.stdout.write("progress: "+str(int(counter/len(buildings_gdf)*100))+" %")
-        sys.stdout.flush()
-        sleep(0.25)
-        counter += 1 # controls progress
-        
+        uf.print_row(row.Index)        
         # creating buffer
         origin = row[index_geometry].centroid
         exteriors = list(row[index_geometry].exterior.coords)
@@ -168,20 +163,19 @@ def advance_visibility(buildings_gdf, obstructions_gdf, radius = 500):
         possible_obstacles = obstructions_gdf[obstructions_gdf.geometry != row[index_geometry]]
         possible_obstacles = obstructions_gdf[~obstructions_gdf.geometry.within(no_holes)]
 
-        start = 0.5
+        start = 0.0
         i = start
         list_lines = [] # list of lines
         
-        # creating lines all around the building till a distance of 500
+        # creating lines all around the building till a defined distance
         while(i <= 360):
 
-            coords = uf.get_coord_angle([origin.x, origin.y], distance = radius, angle = i)
+            coords = uf.get_coord_angle([origin.x, origin.y], distance = distance, angle = i)
             line = LineString([origin, Point(coords)])
             
             # finding actual obstacles to this line
             obstacles = possible_obstacles[possible_obstacles.crosses(line)]
             ob = cascaded_union(obstacles.geometry)
-            
             
             """
             if there are obstacles: indentify where the line from the origin is interrupted, create the geometry and
@@ -205,7 +199,7 @@ def advance_visibility(buildings_gdf, obstructions_gdf, radius = 500):
             list_lines.append(lineNew)
             
             # increase the angle
-            i = i+1
+            i = i+10
        
         # creating a polygon of visibility based on the lines and their progression, taking into account the origin Point too    
         list_points = [Point(origin)]
@@ -236,7 +230,37 @@ def advance_visibility(buildings_gdf, obstructions_gdf, radius = 500):
         
     return buildings_gdf, visibility_polygons
 
+def reassign_sight_lines_to_new_nodes(nodes_gdf, sight_lines_gdf):
+    
+    sight_lines_gdf = sight_lines_gdf.copy()
+    ix_geo = sight_lines_gdf.columns.get_loc("geometry")+1
+    sindex = nodes_gdf.sindex
+    to_drop = []
+    
+    for row in sight_lines_gdf.itertuples():
+        start = row[ix_geo].coords[0]
+        tmp = nodes_gdf[(nodes_gdf.x == start[0]) & (nodes_gdf.y == start[1])].copy()
+        if len(tmp) != 0: sight_lines_gdf.at[row.Index, 'nodeID'] = tmp.iloc[0].nodeID
+        else:
+            point = Point(start)
+            buffer = point.buffer(10)
+            possible_matches_index = list(sindex.intersection(buffer.bounds))
+            possible_matches = nodes_gdf.iloc[possible_matches_index]
+            pm = possible_matches[possible_matches.intersects(buffer)]
 
+            if len(pm) != 0:
+                distance, index = uf.dist_to_gdf_point(point, pm)
+                sight_lines_gdf.at[row.Index, 'nodeID'] = nodes_gdf.loc[index].nodeID
+                new_line = list(row[ix_geo].coords)
+                new_line[0] = (nodes_gdf.loc[index].x, nodes_gdf.loc[index].y)
+                geo_line = LineString([coor for coor in new_line])
+                sight_lines_gdf.at[row.Index, 'geometry'] = geo_line
+            else:
+                to_drop.append(row.Index)
+    
+    sight_lines_gdf.drop(to_drop, axis = 0, inplace = True)
+    print("done") 
+    return sight_lines_gdf
 
 def visibility(buildings_gdf, sight_lines):
     """
@@ -537,7 +561,7 @@ def pragmatic_meaning(buildings_gdf, buffer = 200):
     return buildings_gdf
         
         
-def compute_scores(buildings_gdf):
+def compute_scores(buildings_gdf, g_cW, g_iW):
     """
     The function computes component and global scores, rescaling values when necessary and assigning weights to the different 
     properties measured.
@@ -552,25 +576,26 @@ def compute_scores(buildings_gdf):
     """
     
     # scaling
-    col = ['area', 'fac', 'height', 'prag', 'a_vis','cult'] 
+    col = ['vis', 'fac', 'height', 'area','a_vis', 'cult','prag']
+    col_inverse = ['neigh', 'road']
     for i in col: uf.scaling_columnDF(buildings_gdf, i)
+    for i in col_inverse: uf.scaling_columnDF(buildings_gdf, i, inverse = True) 
+  
+    # computing scores   
+    buildings_gdf['vScore'] = (buildings_gdf['fac_sc']*g_iW['fac'] + buildings_gdf['height_sc']*g_iW['height'] +
+                                buildings_gdf['vis']*g_iW['vis'])
+    buildings_gdf['sScore'] = (buildings_gdf['area_sc']*g_iW['area'] + buildings_gdf['neigh_sc']*g_iW['neigh'] + 
+                               buildings_gdf['a_vis_sc']*g_iW['a_vis']+buildings_gdf['road_sc']*g_iW['road'])
     
-    # inverse scaling
-    col = ['neigh', 'road'] 
-    for i in col: uf.scaling_columnDF(buildings_gdf, i, inverse = True)     
-    
-    # computing scores
-    buildings_gdf['vScore'] = buildings_gdf['fac_sc']*0.30 + buildings_gdf['height_sc']*0.20 + buildings_gdf['vis']*0.5
-    buildings_gdf['sScore'] = (buildings_gdf['area_sc']*0.30 + buildings_gdf['neigh_sc']*0.20 + buildings_gdf['a_vis_sc']*0.30      
-                                +buildings_gdf['road_sc']*0.20)
-    
-    # rescaling
+    # rescaling components
     col = ['vScore', 'sScore']
     for i in col: uf.scaling_columnDF(buildings_gdf, i)
+    buildings_gdf['cScore'] = buildings_gdf['cult_sc']
+    buildings_gdf['pScore'] = buildings_gdf['prag_sc']
     
     # final global score
-    buildings_gdf['gScore'] = (buildings_gdf['vScore_sc']*0.50 + buildings_gdf['sScore_sc']*0.30 + buildings_gdf['cult_sc']*0.10 
-                       + buildings_gdf['prag_sc']*0.10)
+    buildings_gdf['gScore'] = (buildings_gdf['vScore_sc']*g_cW['vScore'] + buildings_gdf['sScore_sc']*g_cW['sScore'] + 
+                               buildings_gdf['cScore']*g_cW['cScore'] + buildings_gdf['pScore']*g_cW['pScore'])
 
     uf.scaling_columnDF(buildings_gdf, 'gScore')
     
@@ -578,7 +603,7 @@ def compute_scores(buildings_gdf):
 
 
 
-def local_scores(buildings_gdf, buffer = 1500):
+def local_scores(buildings_gdf, l_cW, l_iW, buffer = 1500):
     """
     The function compute landmarkness at the local level. Here the components' weights are different from the ones used to calculate the
     global score. The buffer parameter indicates the extent of the area considered to rescale the landmarkness local score.
@@ -600,7 +625,7 @@ def local_scores(buildings_gdf, buffer = 1500):
     buildings_gdf['vScore_l'] = 0.0
     buildings_gdf['sScore_l'] = 0.0
     
-    col = ['area', 'fac', 'height', 'prag', 'a_vis','cult', 'vis']
+    col = ['vis', 'fac', 'height', 'area','a_vis', 'cult','prag']
     col_inverse = ['neigh', 'road']
    
     # recomputing the scores per each building in relation to its neighbours, in an area whose extent is regulated by 'buffer'
@@ -615,13 +640,17 @@ def local_scores(buildings_gdf, buffer = 1500):
         for i in col_inverse: uf.scaling_columnDF(LL, i, inverse = True)
         
         # and recomputing scores
-        LL['vScore_l'] =  LL['fac_sc']*0.20 + LL['height_sc']*0.40 + LL['vis']*0.40
-        LL['sScore_l'] =  LL['area_sc']*0.35 + LL['neigh_sc']*0.40 + LL['road_sc']*0.25 + LL['a_vis_sc']*0.00 
+        LL['vScore_l'] =  LL['fac_sc']*l_iW['fac'] + LL['height_sc']*l_iW['height'] + LL['vis']*l_iW['vis']
+        LL['sScore_l'] =  (LL['area_sc']*l_iW['area']+ LL['neigh_sc']*l_iW['neigh'] +
+                           LL['road_sc']*l_iW['road'] + LL['a_vis_sc']*l_iW['fac']) 
+        LL['cScore_l'] = LL['cult_sc']
+        LL['pScore_l'] = LL['prag_sc']
         
         col_rs = ['vScore_l', 'sScore_l']
         for i in col_rs: uf.scaling_columnDF(LL, i)
         
-        LL['lScore'] =  LL['vScore_l_sc']*0.20 + LL['sScore_l_sc']*0.40 + LL['cult_sc']*0.10 + LL['prag_sc']*0.30
+        LL['lScore'] =  (LL['vScore_l_sc']*l_cW['vScore'] + LL['sScore_l_sc']*l_cW['sScore'] + 
+                         LL['cScore_l']*l_cW['cScore'] + LL['pScore_l']*l_cW['pScore'])
         
         # assigning the so obtined score to the building
         localScore = float("{0:.3f}".format(LL['lScore'].loc[row[0]]))

@@ -243,7 +243,6 @@ def double_nodes(nodes_gdf, edges_gdf):
     # the index of nodes_gdf has to be nodeID
     if list(nodes_gdf.index.values) != list(nodes_gdf.nodeID.values): nodes_gdf.index =  nodes_gdf.nodeID
     nodes_gdf, edges_gdf =  nodes_gdf.copy(), edges_gdf.copy()
-    sindex = nodes_gdf.sindex
     
     # detecting duplicate geometries
     G = nodes_gdf["geometry"].apply(lambda geom: geom.wkb)
@@ -344,7 +343,7 @@ def edges_simplified(edges_gdf):
 
     return(simplified)
 
-def simplify_graph(nodes_gdf, edges_gdf):
+def simplify_graph(nodes_gdf, edges_gdf, update_counts = False):
     """
     The function identify pseudo-nodes, namely nodes that represent intersection between only 2 segments.
     The segments are merged and the node is removed from the nodes_gdf geodataframe.
@@ -381,28 +380,31 @@ def simplify_graph(nodes_gdf, edges_gdf):
         # New node_u and node_v are assigned accordingly. A list of ordered coordinates is obtained for 
         # merging the geometries. 4 conditions:
         if (tmp.iloc[0]['u'] == tmp.iloc[1]['u']):  
-            edges_gdf.set_value(index_first,'u', edges_gdf.loc[index_first]['v'])
-            edges_gdf.set_value(index_first,'v', edges_gdf.loc[index_second]['v'])
+            edges_gdf.at[index_first,'u'] = edges_gdf.loc[index_first]['v']
+            edges_gdf.at[index_first,'v'] = edges_gdf.loc[index_second]['v']
             line_coordsA = list(tmp.iloc[0]['geometry'].coords)
             line_coordsB = list(tmp.iloc[1]['geometry'].coords)    
             line_coordsA.reverse()
         
         elif (tmp.iloc[0]['u'] == tmp.iloc[1]['v']): 
-            edges_gdf.set_value(index_first,'u', edges_gdf.loc[index_second]['u'])
+            edges_gdf.at[index_first,'u'] = edges_gdf.loc[index_second]['u']
             line_coordsB = list(tmp.iloc[0]['geometry'].coords)
             line_coordsA = list(tmp.iloc[1]['geometry'].coords)                
         
         elif (tmp.iloc[0]['v'] == tmp.iloc[1]['u']): 
-            edges_gdf.set_value(index_first,'v', edges_gdf.loc[index_second]['v'])
+            edges_gdf.at[index_first,'v'] = edges_gdf.loc[index_second]['v']
             line_coordsA = list(tmp.iloc[0]['geometry'].coords)
             line_coordsB = list(tmp.iloc[1]['geometry'].coords)  
         
         else: # (tmp.iloc[0]['v'] == tmp.iloc[1]['v']) 
-            edges_gdf.set_value(index_first,'v', edges_gdf.loc[index_second]['u'])
+            edges_gdf.at[index_first,'v'] = edges_gdf.loc[index_second]['u']
             line_coordsA = list(tmp.iloc[0]['geometry'].coords)
             line_coordsB = list(tmp.iloc[1]['geometry'].coords)    
             line_coordsB.reverse()
             
+        if update_counts == True:
+            edges_gdf.at[index_first, 'counts'] = max([edges_gdf.loc[index_first]['counts'], edges_gdf.loc[index_second]['counts']])
+
         # checking that none edges with node_u == node_v have been created, if yes: drop them
         if edges_gdf.loc[index_first].u == edges_gdf.loc[index_first].v: 
             edges_gdf.drop([index_first, index_second], axis = 0, inplace = True)
@@ -412,7 +414,7 @@ def simplify_graph(nodes_gdf, edges_gdf):
         # obtaining coordinates-list in coherent order and merging
         new_line = line_coordsA + line_coordsB
         merged_line = LineString([coor for coor in new_line]) 
-        edges_gdf.set_value(index_first, 'geometry', merged_line)
+        edges_gdf.at[index_first, 'geometry'] = merged_line
         
         if edges_gdf.loc[index_second]['pedestrian'] == True: edges_gdf.set_value(index_first, 'pedestrian', 1)
         # dropping the second segment, as the new geometry was assigned to the first edge
@@ -422,7 +424,7 @@ def simplify_graph(nodes_gdf, edges_gdf):
     return(nodes_gdf, edges_gdf)
 
 
-def clean_network(nodes_gdf, edges_gdf, dead_ends = False):
+def clean_network(nodes_gdf, edges_gdf, dead_ends = False, detect_islands = True, update_counts = False):
     """
     It calls a series of functions (see above) to clean and remove dubplicate geometries or possible parallel short edges.
     It moreover removes pseudo-nodes and, optionally, dead ends.
@@ -437,7 +439,7 @@ def clean_network(nodes_gdf, edges_gdf, dead_ends = False):
     GeoDataFrames
     """
     
-    nodes_gdf, edges_gdf =  nodes_gdf.copy(), edges_gdf.copy()
+    nodes_gdf, edges_gdf = nodes_gdf.copy(), edges_gdf.copy()
     nodes_gdf, edges_gdf = double_nodes(nodes_gdf, edges_gdf)
     
     nodes_gdf.set_index('nodeID', drop = False, inplace = True, append = False)
@@ -449,7 +451,6 @@ def clean_network(nodes_gdf, edges_gdf, dead_ends = False):
     edges_gdf = edges_gdf[edges_gdf['u'] != edges_gdf['v']] #eliminate node-lines
     edges_gdf.sort_index(inplace = True)  
     edges_gdf['code'], edges_gdf['coords'] = None, None
-    
     
     if 'highway' in edges_gdf.columns:
         edges_gdf['pedestrian'] = 0
@@ -493,49 +494,52 @@ def clean_network(nodes_gdf, edges_gdf, dead_ends = False):
             
             # sorting the temporary GDF by length, the shortest is then used as a term of comparison
             tmp.sort_values(['length'], ascending = True, inplace = True)
-            u, v, geo_line, index_line = tmp.iloc[0]['u'], tmp.iloc[0]['v'], tmp.iloc[0]['geometry'], tmp.iloc[0].name 
+            u, v, geo_line, ix_line = tmp.iloc[0]['u'], tmp.iloc[0]['v'], tmp.iloc[0]['geometry'], tmp.iloc[0].name 
             
             # iterate through all the other edges with same u-v nodes                                
             for rowC in tmp.itertuples():
-                if rowC[0] == index_line: continue
-                uC, vC, geo_lineC, index_lineC = rowC[index_u], rowC[index_v], rowC[index_geo], rowC[0] 
+                if rowC[0] == ix_line: continue
+                uC, vC, geo_lineC, ix_lineC = rowC[index_u], rowC[index_v], rowC[index_geo], rowC[0] 
                 
                 # if this edge is 10% longer than the edge identified in the outer loop, delete it
                 if (geo_lineC.length > (geo_line.length * 1.30)): pass
                 # else draw a center-line, replace the geometry of the outer-loop segment with the CL, drop the segment of the inner-loop
                 else:
                     cl = uf.center_line(geo_line, geo_lineC)
-                    edges_gdf.set_value(index_line,'geometry', cl)
+                    edges_gdf.set_value(ix_line,'geometry', cl)
                 
-                if edges_gdf.loc[index_lineC]['pedestrian'] == 1: edges_gdf.set_value(index_line,'pedestrian', 1)  
-                edges_gdf.drop(index_lineC, axis = 0, inplace = True)
+                if edges_gdf.loc[ix_lineC]['pedestrian'] == 1: edges_gdf.set_value(ix_line,'pedestrian', 1)  
+                if update_counts == True: 
+                    edges_gdf.at[ix_line,'counts'] =  edges_gdf.loc[ix_line].counts + edges_gdf.loc[ix_lineC].counts
+                edges_gdf.drop(ix_lineC, axis = 0, inplace = True)
         
          # keeps nodes which are actually used by the edges in the geodataframe
         to_keep = list(set(list(edges_gdf['u'].unique()) + list(edges_gdf['v'].unique())))
         nodes_gdf = nodes_gdf[nodes_gdf['nodeID'].isin(to_keep)]
         # dead-ends and simplify                             
         if dead_ends: nodes_gdf, edges_gdf = fix_dead_ends(nodes_gdf, edges_gdf)
-        nodes_gdf, edges_gdf = simplify_graph(nodes_gdf, edges_gdf)  
+        nodes_gdf, edges_gdf = simplify_graph(nodes_gdf, edges_gdf, update_counts = update_counts)  
     
     if dead_ends: nodes_gdf, edges_gdf = fix_dead_ends(nodes_gdf, edges_gdf)
-    nodes_gdf, edges_gdf = simplify_graph(nodes_gdf, edges_gdf)  
+    nodes_gdf, edges_gdf = simplify_graph(nodes_gdf, edges_gdf, update_counts = update_counts )  
     
     edges_gdf.drop(['code', 'coords', 'tmp'], axis = 1, inplace = True, errors = 'ignore')
     
     nodes_gdf['nodeID'] = nodes_gdf.nodeID.astype(int)
     nodes_gdf, edges_gdf = correct_edges(nodes_gdf, edges_gdf)
     
-    # removing islands of unconnected nodes
-#     Ng = graph_fromGDF(nodes_gdf, edges_gdf, 'nodeID')
-#     sub_graphs = nx.connected_component_subgraphs(Ng)
-#     max_nodes = 0
-#     for i, sg in enumerate(sub_graphs):
-#         if len(sg.nodes) > max_nodes: max_nodes = len(sg.nodes)
-#     for i, sg in enumerate(sub_graphs):
-#         if len(sg.nodes()) < max_nodes: 
-#             for n in sg.nodes(): nodes_gdf.drop([n], axis = 0, inplace = True)
-            
-#     edges_gdf = edges_gdf[(edges_gdf.u.isin(nodes_gdf.nodeID)) & (edges_gdf.v.isin(nodes_gdf.nodeID))]
+    Ng = graph_fromGDF(nodes_gdf, edges_gdf, 'nodeID')
+    
+    # if there are disconnected islands
+    if detect_islands == True:
+        if not nx.is_connected(Ng):  
+            largest_component = max(nx.connected_components(Ng), key=len)
+            # Create a subgraph of Ng consisting only of this component:
+            G = Ng.subgraph(largest_component)
+
+            to_drop = [item for item in list(nodes_gdf.nodeID) if item not in list(G.nodes())]
+            nodes_gdf.drop(to_drop, axis = 0 , inplace = True)
+            edges_gdf = edges_gdf[(edges_gdf.u.isin(nodes_gdf.nodeID)) & (edges_gdf.v.isin(nodes_gdf.nodeID))]   
 
     edges_gdf.set_index('streetID', drop = False, inplace = True, append = False)
     del edges_gdf.index.name
@@ -559,18 +563,18 @@ def correct_edges(nodes_gdf, edges_gdf):
     
     print("Correcting edges coordinates..")
     
-    index_u, index_v  = edges_gdf.columns.get_loc("u")+1, edges_gdf.columns.get_loc("v")+1 
-    index_geo = edges_gdf.columns.get_loc("geometry")+1 
+    ix_u, ix_v  = edges_gdf.columns.get_loc("u")+1, edges_gdf.columns.get_loc("v")+1 
+    ix_geo = edges_gdf.columns.get_loc("geometry")+1 
     
     for row in edges_gdf.itertuples():
-
-        u = nodes_gdf.loc[row[index_u]]['nodeID']
-        v = nodes_gdf.loc[row[index_v]]['nodeID']
-        line_coords = list(row[index_geo].coords)
+        
+        u = nodes_gdf.loc[row[ix_u]]['nodeID']
+        v = nodes_gdf.loc[row[ix_v]]['nodeID']
+        line_coords = list(row[ix_geo].coords)
         line_coords[0] = (nodes_gdf.loc[u]['x'], nodes_gdf.loc[u]['y'])
         line_coords[-1] = (nodes_gdf.loc[v]['x'], nodes_gdf.loc[v]['y'])
         geo_line = (LineString([coor for coor in line_coords]))
-        edges_gdf.set_value(row[0],"geometry", geo_line)
+        edges_gdf.at[row.Index, "geometry"] = geo_line
 
     print("Done")
                                             
@@ -604,8 +608,8 @@ def graph_fromGDF(nodes_gdf, edges_gdf, nodeID):
     attributes = nodes_gdf.to_dict()
     
     for attribute_name in nodes_gdf.columns:
-        if type(nodes_gdf.loc[0][attribute_name]) == list: 
-            attribute_values = {k: v for k, v in attributes[attribute_name].items() if pd.notnull(v)}        
+        if type(nodes_gdf.iloc[0][attribute_name]) == list: 
+            attribute_values = {k: v for k, v in attributes[attribute_name].items()}        
         # only add this attribute to nodes which have a non-null value for it
         else: attribute_values = {k: v for k, v in attributes[attribute_name].items() if pd.notnull(v)}
         nx.set_node_attributes(G, name=attribute_name, values=attribute_values)
@@ -746,14 +750,14 @@ def dual_gdf(nodes_gdf, edges_gdf, crs):
     geometry = edges_dual['geometry']
     edges_dual = gpd.GeoDataFrame(edges_dual[['u','v', 'length']], crs=crs, geometry=geometry)
 
-    index_lineA = edges_dual.columns.get_loc("u")+1
-    index_lineB = edges_dual.columns.get_loc("v")+1
+    ix_lineA = edges_dual.columns.get_loc("u")+1
+    ix_lineB = edges_dual.columns.get_loc("v")+1
     
     for row in edges_dual.itertuples():
 
         # retrieveing original lines from/to
-        geo_lineA = edges_gdf[edges_gdf.index == row[index_lineA]].geometry.iloc[0]
-        geo_lineB = edges_gdf[edges_gdf.index == row[index_lineB]].geometry.iloc[0]
+        geo_lineA = edges_gdf[edges_gdf.index == row[ix_lineA]].geometry.iloc[0]
+        geo_lineB = edges_gdf[edges_gdf.index == row[ix_lineB]].geometry.iloc[0]
         
         # computing angles in degrees and radians
         deflection = uf.ang_geoline(geo_lineA, geo_lineB, degree = True, deflection = True)
@@ -1118,12 +1122,12 @@ def local_betweenness(nodes_gdf, measure = 'Bc', radius = 400):
     
     nodes_gdf = nodes_gdf.copy()
     spatial_index = nodes_gdf.sindex # spatial index
-    index_geometry = nodes_gdf.columns.get_loc("geometry")+1
+    ix_geo = nodes_gdf.columns.get_loc("geometry")+1
     nodes_gdf[measure+'_'+str(radius)] = 0.0
    
     # recomputing the scores per each building in relation to its neighbours, in an area whose extent is regulated by 'buffer'
     for row in nodes_gdf.itertuples():
-        n = row[index_geometry].centroid.buffer(radius)
+        n = row[ix_geo].centroid.buffer(radius)
         possible_matches_index = list(spatial_index.intersection(n.bounds))
         possible_matches = nodes_gdf.iloc[possible_matches_index].copy()
         nn = possible_matches[possible_matches.intersects(n)]

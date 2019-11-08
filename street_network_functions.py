@@ -448,6 +448,7 @@ def clean_network(nodes_gdf, edges_gdf, dead_ends = False, detect_islands = True
     index_u, index_v = edges_gdf.columns.get_loc("u")+1, edges_gdf.columns.get_loc("v")+1
     index_geo = edges_gdf.columns.get_loc("geometry")+1
     
+    nodes_gdf['x'], nodes_gdf['y'] = list(zip(*[(r.coords[0][0], r.coords[0][1]) for r in nodes_gdf.geometry]))
     edges_gdf = edges_gdf[edges_gdf['u'] != edges_gdf['v']] #eliminate node-lines
     edges_gdf.sort_index(inplace = True)  
     edges_gdf['code'], edges_gdf['coords'] = None, None
@@ -522,16 +523,14 @@ def clean_network(nodes_gdf, edges_gdf, dead_ends = False, detect_islands = True
     
     if dead_ends: nodes_gdf, edges_gdf = fix_dead_ends(nodes_gdf, edges_gdf)
     nodes_gdf, edges_gdf = simplify_graph(nodes_gdf, edges_gdf, update_counts = update_counts )  
-    
+    nodes_gdf['x'], nodes_gdf['y'] = list(zip(*[(r.coords[0][0], r.coords[0][1]) for r in nodes_gdf.geometry]))
     edges_gdf.drop(['code', 'coords', 'tmp'], axis = 1, inplace = True, errors = 'ignore')
-    
     nodes_gdf['nodeID'] = nodes_gdf.nodeID.astype(int)
     nodes_gdf, edges_gdf = correct_edges(nodes_gdf, edges_gdf)
     
-    Ng = graph_fromGDF(nodes_gdf, edges_gdf, 'nodeID')
-    
     # if there are disconnected islands
     if detect_islands == True:
+        Ng = graph_fromGDF(nodes_gdf, edges_gdf, 'nodeID')
         if not nx.is_connected(Ng):  
             largest_component = max(nx.connected_components(Ng), key=len)
             # Create a subgraph of Ng consisting only of this component:

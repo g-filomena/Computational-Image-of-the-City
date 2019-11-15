@@ -1,6 +1,6 @@
 # The Computational Image of the City 
 [![DOI](https://zenodo.org/badge/130851801.svg)](https://zenodo.org/badge/latestdoi/130851801)
-[![Binder](https://mybinder.org/badge_logo.svg)](mybinder.ovh/user/g-filomena-comp-age-of-the-city-46eavslb/tree)
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/g-filomena/Computational-Image-of-the-City/b1307faee566e8408e542940bd5bc489ab7d8aea)
 
 **A tool for extracting the Computational Image of the City from geospatial datasets**
 

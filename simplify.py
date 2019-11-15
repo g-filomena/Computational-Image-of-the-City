@@ -446,6 +446,7 @@ def assign_cluster_edges(nodes_gdf, edges_gdf):
     # assigning cluster
     tmp = edges_gdf[(edges_gdf['clus_u'].isnull()) | (edges_gdf['clus_v'].isnull())].copy()
     for row in tmp.itertuples():
+        print(row.Index)
         if row[ix_clus_u] is None:
             result = next_cluster(nodes_gdf, edges_gdf, row.Index, 'u')
             goal = result[0]
@@ -702,7 +703,8 @@ def interpolate(first_node, last_node, center_line, list_nodes, list_lines, node
         edges_gdf.at[new_index, 'geometry'] = result[0]
         edges_gdf.at[new_index, 'v'] = node
         if update_counts == True: 
-            edges_gdf.at[new_index, 'counts'] = edges_gdf.loc[ix_line].counts + edges_gdf.loc[list_lines[counter]].counts
+            counts = edges_gdf.loc[ix_line].counts + edges_gdf.loc[list_lines[counter]].counts
+            edges_gdf.at[new_index, 'counts'] = counts
         
         # second part of the segment
         new_index = max(edges_gdf.index)+1
@@ -714,7 +716,8 @@ def interpolate(first_node, last_node, center_line, list_nodes, list_lines, node
         gline = result[1]
         
         if (update_counts == True) & (counter == len(list_nodes)-1): 
-            edges_gdf.at[new_index, 'counts'] = edges_gdf.loc[ix_line].counts + edges_gdf.loc[list_lines[counter+1]].counts
+            counts = edges_gdf.loc[ix_line].counts + edges_gdf.loc[list_lines[counter+1]].counts
+            edges_gdf.at[new_index, 'counts'] = counts
                                                                                                          
 
 def interpolate_multi(first_node, last_node, center_line, list_nodes, list_lines, nodes_gdf, edges_gdf, ix_line, update_counts = False):
@@ -750,6 +753,7 @@ def interpolate_multi(first_node, last_node, center_line, list_nodes, list_lines
         if counter == 0: edges_gdf.at[new_index, 'u'] = first_node
         edges_gdf.at[new_index, 'geometry'] = result[0]
         edges_gdf.at[new_index, 'v'] = node
+        
         if update_counts == True: 
             count = edges_gdf.loc[lines_distances_sorted[counter][0]].counts
             edges_gdf.at[new_index, 'counts'] = count
@@ -790,7 +794,9 @@ def merge_two(ix_lineA, ix_lineB, glineA, glineB, nodes_gdf, edges_gdf, clusters
         cl = LineString([coor for coor in line_coords])
     
     edges_gdf.at[ix_lineA, 'geometry'] = cl
-    if  update_counts == True: edges_gdf.at[ix_lineA, 'counts'] = edges_gdf.loc[ix_lineA].counts + edges_gdf.loc[ix_lineB].counts
+    if  update_counts == True: 
+        counts = edges_gdf.loc[ix_lineA].counts + edges_gdf.loc[ix_lineB].counts
+        edges_gdf.at[ix_lineA, 'counts'] = counts
     return 'processed'
 
     
@@ -969,25 +975,37 @@ def simplify_dual_lines(nodes_gdf, edges_gdf, clusters_gdf, update_counts = Fals
                         if update_counts == True:
                             bc = list(o_edges.index[((o_edges.clus_u == cluster) & (o_edges.v.isin(list_nodes))) | 
                                                     ((o_edges.clus_v == cluster) & (o_edges.u.isin(list_nodes))) |
-                                                    ((o_edges.clus_uR == cluster) & (o_edges.u.isin(list_nodes)))|
+                                                    ((o_edges.clus_uR == cluster) & (o_edges.v.isin(list_nodes)))|
                                                     ((o_edges.clus_vR == cluster) & (o_edges.u.isin(list_nodes)))])
                            
                             bg = list(o_edges.index[((o_edges.clus_u == goal) & (o_edges.v.isin(list_nodes))) | 
                                                     ((o_edges.clus_v == goal) & (o_edges.u.isin(list_nodes))) |
-                                                    ((o_edges.clus_uR == goal) & (o_edges.u.isin(list_nodes)))|
+                                                    ((o_edges.clus_uR == goal) & (o_edges.v.isin(list_nodes)))|
                                                     ((o_edges.clus_vR == goal) & (o_edges.u.isin(list_nodes)))])
+                            
+                            assessed = []
                             for lt in lines_traversed:
                                 if lt in bc:
                                     for ltC in bc: 
-                                        if lt == ltC: continue
-                                        if ltC in lines: continue
-                                        else: edges_gdf.at[lt, 'counts'] = edges_gdf.loc[lt].counts + edges_gdf.loc[ltC].counts
+                                        if (ltC in lines) | (lt == ltC) | (ltC in lines_traversed) | (ltC in assessed): continue
+                                        if ((o_edges.loc[lt].u != o_edges.loc[ltC].v) & (o_edges.loc[lt].u != o_edges.loc[ltC].u)
+                                            & (o_edges.loc[lt].v != o_edges.loc[ltC].v) & (o_edges.loc[lt].v != o_edges.loc[ltC].u)): 
+                                            continue
+                                        else: 
+                                            counts = edges_gdf.loc[lt].counts + edges_gdf.loc[ltC].counts      
+                                            edges_gdf.at[lt, 'counts'] = counts
+                                            assessed.append(ltC)
 
                                 if lt in bg:
                                     for ltC in bg: 
-                                        if lt == ltC: continue
-                                        if ltC in lines: continue
-                                        else: edges_gdf.at[lt, 'counts'] = edges_gdf.loc[lt].counts + edges_gdf.loc[ltC].counts
+                                        if (ltC in lines) | (lt == ltC) | (ltC in lines_traversed) | (ltC in assessed): continue
+                                        if ((o_edges.loc[lt].u != o_edges.loc[ltC].v) & (o_edges.loc[lt].u != o_edges.loc[ltC].u)
+                                            & (o_edges.loc[lt].v != o_edges.loc[ltC].v) & (o_edges.loc[lt].v != o_edges.loc[ltC].u)): 
+                                            continue
+                                        else: 
+                                            counts = edges_gdf.loc[lt].counts + edges_gdf.loc[ltC].counts      
+                                            edges_gdf.at[lt, 'counts'] = counts
+                                            assessed.append(ltC)
                         
                         p = merge_two_inter(ix_line, ix_lineC, gline, glineC, nodes_gdf, edges_gdf, clusters_gdf,
                                      cluster, goal, u, last_node, list_nodes, lines_traversed, update_counts =  update_counts)
@@ -1003,9 +1021,10 @@ def simplify_dual_lines(nodes_gdf, edges_gdf, clusters_gdf, update_counts = Fals
                     # SUB-OPTION 3: none reaches a cluster directly; comparing the first reached cluster
                     else: 
                         goal, gline, lines_t, nodes_en, v = next_cluster(nodes_gdf, o_edges, ix_line, dr)
-                        destC, glineC, lines_tC, nodes_enC, vC = next_cluster(nodes_gdf, o_edges, ix_lineC, drC)  
+                        goalC, glineC, lines_tC, nodes_enC, vC = next_cluster(nodes_gdf, o_edges, ix_lineC, drC)  
                         common = list(set(lines_t).intersection(lines_tC))
                         if len(common) > 0: break
+                        
                         list_nodes = nodes_en + nodes_enC
                         if update_counts == True:
                             lines_t.insert(0, ix_line)
@@ -1016,25 +1035,39 @@ def simplify_dual_lines(nodes_gdf, edges_gdf, clusters_gdf, update_counts = Fals
                         if update_counts == True:
                             bc = list(o_edges.index[((o_edges.clus_u == cluster) & (o_edges.v.isin(list_nodes))) | 
                                                     ((o_edges.clus_v == cluster) & (o_edges.u.isin(list_nodes))) |
-                                                    ((o_edges.clus_uR == cluster) & (o_edges.u.isin(list_nodes)))|
+                                                    ((o_edges.clus_uR == cluster) & (o_edges.v.isin(list_nodes)))|
                                                     ((o_edges.clus_vR == cluster) & (o_edges.u.isin(list_nodes)))])
                            
                             bg = list(o_edges.index[((o_edges.clus_u == goal) & (o_edges.v.isin(list_nodes))) | 
                                                     ((o_edges.clus_v == goal) & (o_edges.u.isin(list_nodes))) |
-                                                    ((o_edges.clus_uR == goal) & (o_edges.u.isin(list_nodes)))|
+                                                    ((o_edges.clus_uR == goal) & (o_edges.v.isin(list_nodes)))|
                                                     ((o_edges.clus_vR == goal) & (o_edges.u.isin(list_nodes)))])
+
+                            assessed = []
                             for lt in lines_traversed:
                                 if lt in bc:
                                     for ltC in bc: 
-                                        if lt == ltC: continue
-                                        if ltC in lines: continue
-                                        else: edges_gdf.at[lt, 'counts'] = edges_gdf.loc[lt].counts + edges_gdf.loc[ltC].counts
+                                        if (ltC in lines) | (lt == ltC) | (ltC in lines_traversed) | (ltC in assessed): continue
+                                        if ((o_edges.loc[lt].u != o_edges.loc[ltC].v) & (o_edges.loc[lt].u != o_edges.loc[ltC].u)
+                                            & (o_edges.loc[lt].v != o_edges.loc[ltC].v) & (o_edges.loc[lt].v != o_edges.loc[ltC].u)): 
+                                            continue
+                                        else: 
+                                            counts = edges_gdf.loc[lt].counts + edges_gdf.loc[ltC].counts      
+                                            edges_gdf.at[lt, 'counts'] = counts
+                                            assessed.append(ltC)
 
                                 if lt in bg:
                                     for ltC in bg: 
-                                        if lt == ltC: continue
-                                        if ltC in lines: continue
-                                        else: edges_gdf.at[lt, 'counts'] = edges_gdf.loc[lt].counts + edges_gdf.loc[ltC].counts             
+                                        if (ltC in lines) | (lt == ltC) | (ltC in lines_traversed) | (ltC in assessed): continue
+                                        if ((o_edges.loc[lt].u != o_edges.loc[ltC].v) & (o_edges.loc[lt].u != o_edges.loc[ltC].u)
+                                            & (o_edges.loc[lt].v != o_edges.loc[ltC].v) & (o_edges.loc[lt].v != o_edges.loc[ltC].u)): 
+                                            continue
+                                        else: 
+                                            counts = edges_gdf.loc[lt].counts + edges_gdf.loc[ltC].counts      
+                                            
+                                            edges_gdf.at[lt, 'counts'] = counts
+                                            assessed.append(ltC)  
+                                            
                         # last node does not matter, as it will be reassigned to the relative cluster
                         p = merge_two_inter(ix_line, ix_lineC, gline, glineC, nodes_gdf, edges_gdf, clusters_gdf, 
                                           cluster, goal, u, v, list_nodes, lines_traversed, multi = True, update_counts =  update_counts)
@@ -1145,25 +1178,36 @@ def simplify_dual_lines(nodes_gdf, edges_gdf, clusters_gdf, update_counts = Fals
                             if update_counts == True:
                                 bc = list(o_edges.index[((o_edges.clus_u == cluster) & (o_edges.v.isin(list_nodes))) | 
                                                         ((o_edges.clus_v == cluster) & (o_edges.u.isin(list_nodes))) |
-                                                        ((o_edges.clus_uR == cluster) & (o_edges.u.isin(list_nodes)))|
+                                                        ((o_edges.clus_uR == cluster) & (o_edges.v.isin(list_nodes)))|
                                                         ((o_edges.clus_vR == cluster) & (o_edges.u.isin(list_nodes)))])
 
                                 bg = list(o_edges.index[((o_edges.clus_u == goal) & (o_edges.v.isin(list_nodes))) | 
                                                         ((o_edges.clus_v == goal) & (o_edges.u.isin(list_nodes))) |
-                                                        ((o_edges.clus_uR == goal) & (o_edges.u.isin(list_nodes)))|
+                                                        ((o_edges.clus_uR == goal) & (o_edges.v.isin(list_nodes)))|
                                                         ((o_edges.clus_vR == goal) & (o_edges.u.isin(list_nodes)))])
+                                assessed = []
                                 for lt in lines_traversed:
                                     if lt in bc:
                                         for ltC in bc: 
-                                            if lt == ltC: continue
-                                            if ltC in lines: continue
-                                            else: edges_gdf.at[lt, 'counts'] = edges_gdf.loc[lt].counts + edges_gdf.loc[ltC].counts
+                                            if (ltC in lines) | (lt == ltC) | (ltC in lines_traversed) | (ltC in assessed): continue
+                                            if ((o_edges.loc[lt].u != o_edges.loc[ltC].v) & (o_edges.loc[lt].u != o_edges.loc[ltC].u)
+                                                & (o_edges.loc[lt].v != o_edges.loc[ltC].v) & (o_edges.loc[lt].v != o_edges.loc[ltC].u)): 
+                                                continue
+                                            else: 
+                                                counts = edges_gdf.loc[lt].counts + edges_gdf.loc[ltC].counts      
+                                                edges_gdf.at[lt, 'counts'] = counts
+                                                assessed.append(ltC)
 
                                     if lt in bg:
                                         for ltC in bg: 
-                                            if lt == ltC: continue
-                                            if ltC in lines: continue
-                                            else: edges_gdf.at[lt, 'counts'] = edges_gdf.loc[lt].counts + edges_gdf.loc[ltC].counts        
+                                            if (ltC in lines) | (lt == ltC) | (ltC in lines_traversed) | (ltC in assessed): continue
+                                            if ((o_edges.loc[lt].u != o_edges.loc[ltC].v) & (o_edges.loc[lt].u != o_edges.loc[ltC].u)
+                                                & (o_edges.loc[lt].v != o_edges.loc[ltC].v) & (o_edges.loc[lt].v != o_edges.loc[ltC].u)):
+                                                continue
+                                            else: 
+                                                counts = edges_gdf.loc[lt].counts + edges_gdf.loc[ltC].counts      
+                                                edges_gdf.at[lt, 'counts'] = counts
+                                                assessed.append(ltC)      
                                           
                             interpolate(u, last_node, cl, list_nodes, lines_traversed, nodes_gdf, edges_gdf, ix,
                                         update_counts =  update_counts)
@@ -1183,24 +1227,24 @@ def simplify_dual_lines(nodes_gdf, edges_gdf, clusters_gdf, update_counts = Fals
                             if (uC == u) | (uCC == u): only_two = True
                             else:
                                 if  update_counts == True: main_count = o_edges.loc[ix_line].counts
-                                destC, glineC, lines_tC, nodes_enC, last_node = next_cluster(nodes_gdf, o_edges, ix_lineC, drC)
-                                destCC, glineCC, lines_tCC, nodes_enCC, last_nodeCC = next_cluster(nodes_gdf, o_edges, ix_lineCC, drCC)
+                                goalC, glineC, lines_tC, nodes_enC, last_node = next_cluster(nodes_gdf, o_edges, ix_lineC, drC)
+                                goalCC, glineCC, lines_tCC, nodes_enCC, last_nodeCC = next_cluster(nodes_gdf, o_edges, ix_lineCC, drCC)
                                 lines_t, nodes_en = [], []
                                 goal = c_v
                         elif (c_vC != None):
                             if (u == uC) | (uCC == uC): only_two = True
                             else:
                                 if  update_counts == True: main_count = o_edges.loc[ix_lineC].counts
-                                dest, gline, lines_t, nodes_en, last_node = next_cluster(nodes_gdf, o_edges, ix_line, dr)
-                                destCC, glineCC, lines_tCC, nodes_enCC, last_nodeCC = next_cluster(nodes_gdf, o_edges, ix_lineCC, drCC)
+                                goal, gline, lines_t, nodes_en, last_node = next_cluster(nodes_gdf, o_edges, ix_line, dr)
+                                goalCC, glineCC, lines_tCC, nodes_enCC, last_nodeCC = next_cluster(nodes_gdf, o_edges, ix_lineCC, drCC)
                                 lines_tC, nodes_enC = [], []
                                 goal = c_vC
                         else:
                             if (u == uCC) | (uC == uCC): only_two = True
                             else:
                                 if  update_counts == True: main_count = o_edges.loc[ix_lineCC].counts
-                                dest, gline, lines_t, nodes_en, last_node = next_cluster(nodes_gdf, o_edges, ix_line, dr)
-                                destC, glineC, lines_tC, nodes_enC, last_nodeC = next_cluster(nodes_gdf, o_edges, ix_lineC, drC) 
+                                goal, gline, lines_t, nodes_en, last_node = next_cluster(nodes_gdf, o_edges, ix_line, dr)
+                                goalC, glineC, lines_tC, nodes_enC, last_nodeC = next_cluster(nodes_gdf, o_edges, ix_lineC, drC) 
                                 lines_tCC, nodes_enCC = [], []
                                 goal = c_vCC
 
@@ -1269,25 +1313,36 @@ def simplify_dual_lines(nodes_gdf, edges_gdf, clusters_gdf, update_counts = Fals
                             if update_counts == True:
                                 bc = list(o_edges.index[((o_edges.clus_u == cluster) & (o_edges.v.isin(list_nodes))) | 
                                                         ((o_edges.clus_v == cluster) & (o_edges.u.isin(list_nodes))) |
-                                                        ((o_edges.clus_uR == cluster) & (o_edges.u.isin(list_nodes)))|
+                                                        ((o_edges.clus_uR == cluster) & (o_edges.v.isin(list_nodes)))|
                                                         ((o_edges.clus_vR == cluster) & (o_edges.u.isin(list_nodes)))])
 
                                 bg = list(o_edges.index[((o_edges.clus_u == goal) & (o_edges.v.isin(list_nodes))) | 
                                                         ((o_edges.clus_v == goal) & (o_edges.u.isin(list_nodes))) |
-                                                        ((o_edges.clus_uR == goal) & (o_edges.u.isin(list_nodes)))|
+                                                        ((o_edges.clus_uR == goal) & (o_edges.v.isin(list_nodes)))|
                                                         ((o_edges.clus_vR == goal) & (o_edges.u.isin(list_nodes)))])
+                                assessed = []
                                 for lt in lines_traversed:
                                     if lt in bc:
                                         for ltC in bc: 
-                                            if lt == ltC: continue
-                                            if ltC in lines: continue
-                                            else: edges_gdf.at[lt, 'counts'] = edges_gdf.loc[lt].counts + edges_gdf.loc[ltC].counts
+                                            if (ltC in lines) | (lt == ltC) | (ltC in lines_traversed) | (ltC in assessed): continue
+                                            if ((o_edges.loc[lt].u != o_edges.loc[ltC].v) & (o_edges.loc[lt].u != o_edges.loc[ltC].u)
+                                                & (o_edges.loc[lt].v != o_edges.loc[ltC].v) & (o_edges.loc[lt].v != o_edges.loc[ltC].u)): 
+                                                continue
+                                            else: 
+                                                counts = edges_gdf.loc[lt].counts + edges_gdf.loc[ltC].counts      
+                                                edges_gdf.at[lt, 'counts'] = counts
+                                                assessed.append(ltC)
 
                                     if lt in bg:
                                         for ltC in bg: 
-                                            if lt == ltC: continue
-                                            if ltC in lines: continue
-                                            else: edges_gdf.at[lt, 'counts'] = edges_gdf.loc[lt].counts + edges_gdf.loc[ltC].counts
+                                            if (ltC in lines) | (lt == ltC) | (ltC in lines_traversed) | (ltC in assessed): continue
+                                            if ((o_edges.loc[lt].u != o_edges.loc[ltC].v) & (o_edges.loc[lt].u != o_edges.loc[ltC].u)
+                                                & (o_edges.loc[lt].v != o_edges.loc[ltC].v) & (o_edges.loc[lt].v != o_edges.loc[ltC].u)):
+                                                continue
+                                            else: 
+                                                counts = edges_gdf.loc[lt].counts + edges_gdf.loc[ltC].counts      
+                                                edges_gdf.at[lt, 'counts'] = counts
+                                                assessed.append(ltC)
                                           
                             interpolate(u, last_node, cl, list_nodes, lines_traversed, nodes_gdf, edges_gdf, ix_line, 
                                         update_counts =  update_counts)              
@@ -1317,28 +1372,42 @@ def simplify_dual_lines(nodes_gdf, edges_gdf, clusters_gdf, update_counts = Fals
                                 if update_counts == True:
                                     bc = list(o_edges.index[((o_edges.clus_u == cluster) & (o_edges.v.isin(list_nodes))) | 
                                                             ((o_edges.clus_v == cluster) & (o_edges.u.isin(list_nodes))) |
-                                                            ((o_edges.clus_uR == cluster) & (o_edges.u.isin(list_nodes)))|
+                                                            ((o_edges.clus_uR == cluster) & (o_edges.v.isin(list_nodes)))|
                                                             ((o_edges.clus_vR == cluster) & (o_edges.u.isin(list_nodes)))])
 
                                     bg = list(o_edges.index[((o_edges.clus_u == goal) & (o_edges.v.isin(list_nodes))) | 
                                                             ((o_edges.clus_v == goal) & (o_edges.u.isin(list_nodes))) |
-                                                            ((o_edges.clus_uR == goal) & (o_edges.u.isin(list_nodes)))|
+                                                            ((o_edges.clus_uR == goal) & (o_edges.v.isin(list_nodes)))|
                                                             ((o_edges.clus_vR == goal) & (o_edges.u.isin(list_nodes)))])
+                                    
+                                    assessed = []
                                     for lt in lines_traversed:
                                         if lt in bc:
                                             for ltC in bc: 
-                                                if lt == ltC: continue
-                                                if ltC in lines: continue
-                                                else: edges_gdf.at[lt, 'counts'] = edges_gdf.loc[lt].counts + edges_gdf.loc[ltC].counts
+                                                if (ltC in lines) | (lt == ltC) | (ltC in lines_traversed) | (ltC in assessed): continue
+                                                if ((o_edges.loc[lt].u != o_edges.loc[ltC].v) & (o_edges.loc[lt].u != o_edges.loc[ltC].u)
+                                                    & (o_edges.loc[lt].v != o_edges.loc[ltC].v) & 
+                                                    (o_edges.loc[lt].v != o_edges.loc[ltC].u)): continue
+                                                else: 
+                                                    counts = edges_gdf.loc[lt].counts + edges_gdf.loc[ltC].counts      
+                                                    edges_gdf.at[lt, 'counts'] = counts
+                                                    assessed.append(ltC)
 
                                         if lt in bg:
                                             for ltC in bg: 
-                                                if lt == ltC: continue
-                                                if ltC in lines: continue
-                                                else: edges_gdf.at[lt, 'counts'] = edges_gdf.loc[lt].counts + edges_gdf.loc[ltC].counts         
+                                                if (ltC in lines) | (lt == ltC) | (ltC in lines_traversed) | (ltC in assessed): continue
+                                                if ((o_edges.loc[lt].u != o_edges.loc[ltC].v) & (o_edges.loc[lt].u != o_edges.loc[ltC].u)
+                                                    & (o_edges.loc[lt].v != o_edges.loc[ltC].v) & 
+                                                    (o_edges.loc[lt].v != o_edges.loc[ltC].u)): continue
+                                                else: 
+                                                    counts = edges_gdf.loc[lt].counts + edges_gdf.loc[ltC].counts      
+                                                    edges_gdf.at[lt, 'counts'] = counts
+                                                    assessed.append(ltC)         
+                                                    
                                 to_drop = list(filter(lambda a: a != ix_line, to_drop))
                                 if  update_counts == True: 
-                                    for i in lines_traversed: edges_gdf.at[i, 'counts'] = main_count + edges_gdf.loc[i].counts 
+                                    for i in lines_traversed: 
+                                        edges_gdf.at[i, 'counts'] = main_count + edges_gdf.loc[i].counts 
                                 interpolate_multi(u, last_node, cl, list_nodes, lines_traversed, nodes_gdf, edges_gdf, 
                                                   ix_line, update_counts =  update_counts)
                                 done = True
@@ -1348,8 +1417,8 @@ def simplify_dual_lines(nodes_gdf, edges_gdf, clusters_gdf, update_counts = Fals
                     ## SUB-OPTION 4: none reaches a cluster:
                     else: 
                         goal, gline, lines_t, nodes_en, last_node = next_cluster(nodes_gdf, o_edges, ix_line, dr)
-                        destC, glineC, lines_tC, nodes_enC, last_nodeC = next_cluster(nodes_gdf, o_edges, ix_lineC, drC)
-                        destCC, glineCC, lines_tCC, nodes_enCC, last_nodeCC = next_cluster(nodes_gdf, o_edges, ix_lineCC, drCC)
+                        goalC, glineC, lines_tC, nodes_enC, last_nodeC = next_cluster(nodes_gdf, o_edges, ix_lineC, drC)
+                        goalCC, glineCC, lines_tCC, nodes_enCC, last_nodeCC = next_cluster(nodes_gdf, o_edges, ix_lineCC, drCC)
                         
                         if (gline.length > glineC.length*1.50) & (gline.length > glineCC.length*1.50):
                             pDL.drop(ix_line, axis = 0, inplace = True)
@@ -1372,25 +1441,39 @@ def simplify_dual_lines(nodes_gdf, edges_gdf, clusters_gdf, update_counts = Fals
                             if update_counts == True:
                                 bc = list(o_edges.index[((o_edges.clus_u == cluster) & (o_edges.v.isin(list_nodes))) | 
                                                         ((o_edges.clus_v == cluster) & (o_edges.u.isin(list_nodes))) |
-                                                        ((o_edges.clus_uR == cluster) & (o_edges.u.isin(list_nodes)))|
+                                                        ((o_edges.clus_uR == cluster) & (o_edges.v.isin(list_nodes)))|
                                                         ((o_edges.clus_vR == cluster) & (o_edges.u.isin(list_nodes)))])
 
                                 bg = list(o_edges.index[((o_edges.clus_u == goal) & (o_edges.v.isin(list_nodes))) | 
                                                         ((o_edges.clus_v == goal) & (o_edges.u.isin(list_nodes))) |
-                                                        ((o_edges.clus_uR == goal) & (o_edges.u.isin(list_nodes)))|
+                                                        ((o_edges.clus_uR == goal) & (o_edges.v.isin(list_nodes)))|
                                                         ((o_edges.clus_vR == goal) & (o_edges.u.isin(list_nodes)))])
+                                
+                                assessed = []
                                 for lt in lines_traversed:
                                     if lt in bc:
                                         for ltC in bc: 
-                                            if lt == ltC: continue
-                                            if ltC in lines: continue
-                                            else: edges_gdf.at[lt, 'counts'] = edges_gdf.loc[lt].counts + edges_gdf.loc[ltC].counts
+                                            if (ltC in lines) | (lt == ltC) | (ltC in lines_traversed) | (ltC in assessed): continue
+                                            if ((o_edges.loc[lt].u != o_edges.loc[ltC].v) & (o_edges.loc[lt].u != o_edges.loc[ltC].u)
+                                                & (o_edges.loc[lt].v != o_edges.loc[ltC].v) & (o_edges.loc[lt].v != o_edges.loc[ltC].u)): 
+                                                continue
+                                            else: 
+                                                counts = edges_gdf.loc[lt].counts + edges_gdf.loc[ltC].counts      
+                                                edges_gdf.at[lt, 'counts'] = counts
+                                                assessed.append(ltC)
 
                                     if lt in bg:
                                         for ltC in bg: 
-                                            if lt == ltC: continue
-                                            if ltC in lines: continue
-                                            else: edges_gdf.at[lt, 'counts'] = edges_gdf.loc[lt].counts + edges_gdf.loc[ltC].counts                   
+                                            if (ltC in lines) | (lt == ltC) | (ltC in lines_traversed) | (ltC in assessed): continue
+                                            if ((o_edges.loc[lt].u != o_edges.loc[ltC].v) & (o_edges.loc[lt].u != o_edges.loc[ltC].u)
+                                                & (o_edges.loc[lt].v != o_edges.loc[ltC].v) & (o_edges.loc[lt].v != o_edges.loc[ltC].u)):
+                                                continue
+                                            else: 
+                                                counts = edges_gdf.loc[lt].counts + edges_gdf.loc[ltC].counts      
+                                                
+                                                edges_gdf.at[lt, 'counts'] = counts
+                                                assessed.append(ltC)              
+                                                
                             to_drop = list(filter(lambda a: a != ix_line, to_drop))  
                             interpolate_multi(u, last_node, cl, list_nodes, lines_traversed, nodes_gdf, edges_gdf, ix_line, 
                                               update_counts =  update_counts)    
@@ -1478,26 +1561,36 @@ def simplify_dual_lines(nodes_gdf, edges_gdf, clusters_gdf, update_counts = Fals
                         # update counts with in between segments' counts                   
                         bc = list(o_edges.index[((o_edges.clus_u == cluster) & (o_edges.v.isin(list_nodes))) | 
                                                 ((o_edges.clus_v == cluster) & (o_edges.u.isin(list_nodes))) |
-                                                ((o_edges.clus_uR == cluster) & (o_edges.u.isin(list_nodes)))|
+                                                ((o_edges.clus_uR == cluster) & (o_edges.v.isin(list_nodes)))|
                                                 ((o_edges.clus_vR == cluster) & (o_edges.u.isin(list_nodes)))])
 
                         bg = list(o_edges.index[((o_edges.clus_u == goal) & (o_edges.v.isin(list_nodes))) | 
                                                 ((o_edges.clus_v == goal) & (o_edges.u.isin(list_nodes))) |
-                                                ((o_edges.clus_uR == goal) & (o_edges.u.isin(list_nodes)))|
+                                                ((o_edges.clus_uR == goal) & (o_edges.v.isin(list_nodes)))|
                                                 ((o_edges.clus_vR == goal) & (o_edges.u.isin(list_nodes)))])
+                        assessed = []
                         for lt in lines_traversed:
                             if lt in bc:
                                 for ltC in bc: 
-                                    if lt == ltC: continue
-                                    if ltC in lines: continue
-                                    else: edges_gdf.at[lt, 'counts'] = edges_gdf.loc[lt].counts + edges_gdf.loc[ltC].counts
+                                    if (ltC in lines) | (lt == ltC) | (ltC in lines_traversed) | (ltC in assessed): continue
+                                    if ((o_edges.loc[lt].u != o_edges.loc[ltC].v) & (o_edges.loc[lt].u != o_edges.loc[ltC].u)
+                                        & (o_edges.loc[lt].v != o_edges.loc[ltC].v) & (o_edges.loc[lt].v != o_edges.loc[ltC].u)): 
+                                        continue
+                                    else: 
+                                        counts = edges_gdf.loc[lt].counts + edges_gdf.loc[ltC].counts      
+                                        edges_gdf.at[lt, 'counts'] = counts
+                                        assessed.append(ltC)
 
                             if lt in bg:
                                 for ltC in bg: 
-                                    if lt == ltC: continue
-                                    if ltC in lines: continue
-                                    else: edges_gdf.at[lt, 'counts'] = edges_gdf.loc[lt].counts + edges_gdf.loc[ltC].counts
-                    
+                                    if (ltC in lines) | (lt == ltC) | (ltC in lines_traversed) | (ltC in assessed): continue
+                                    if ((o_edges.loc[lt].u != o_edges.loc[ltC].v) & (o_edges.loc[lt].u != o_edges.loc[ltC].u)
+                                        & (o_edges.loc[lt].v != o_edges.loc[ltC].v) & (o_edges.loc[lt].v != o_edges.loc[ltC].u)):
+                                        continue
+                                    else: 
+                                        counts = edges_gdf.loc[lt].counts + edges_gdf.loc[ltC].counts      
+                                        edges_gdf.at[lt, 'counts'] = counts
+                                        assessed.append(ltC)     
                     
                     print(ix_line, ix_lineC, ix_lineCC, ix_lineCCC, 'OPTION 4')     
                     if len(list_nodes) == 0: 
@@ -1565,6 +1658,7 @@ def simplify_dual_linesNodes(nodes_gdf, edges_gdf, clusters_gdf,  update_counts 
             # orientate everything from "u" to "v"
             pDL['dir'] = 'v'
             for g in pDL.itertuples():
+                print(g, n)
                 if g[ix_v] == n[0]:
                     line_coords = list(g[ix_geo].coords)
                     line_coords.reverse() 
@@ -1649,7 +1743,7 @@ def simplify_dual_linesNodes(nodes_gdf, edges_gdf, clusters_gdf,  update_counts 
                 else:  
                     print(ix_line, ix_lineC, 'sub3 NODE', 'node ', n[0], 'cluster ', goal)    
                     goal, gline, lines_t, nodes_en, v = next_cluster(nodes_gdf, o_edges, ix_line, dr)
-                    destC, glineC, lines_tC, nodes_enC, vC = next_cluster(nodes_gdf, o_edges, ix_lineC, drC)    
+                    goalC, glineC, lines_tC, nodes_enC, vC = next_cluster(nodes_gdf, o_edges, ix_lineC, drC)    
                     if (gline.length > glineC.length *1.50) | (glineC.length > gline.length *1.50): continue
                                         
                     lines_t.insert(0, ix_line)

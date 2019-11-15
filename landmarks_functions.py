@@ -90,10 +90,10 @@ def structural_properties(buildings_gdf, obstructions_gdf, street_gdf, buffer = 
     # spatial index
     sindex = obstructions_gdf.sindex
     street_network = street_gdf.geometry.unary_union
-    buildings_gdf['neigh'], buildings_gdf['road']  = 0.0
+    buildings_gdf['neigh'] = 0.0
+    buildings_gdf['road'] = 0.0
     
-    for row in buildings_gdf.itertuples():
-               
+    for row in buildings_gdf.itertuples():    
         g = row[index_geometry]
         buff = g.buffer(buffer)
         t = g.envelope
@@ -117,7 +117,7 @@ def structural_properties(buildings_gdf, obstructions_gdf, street_gdf, buffer = 
         buildings_gdf.at[row[0], 'road'] = dist
     
     #facade area (roughly computed)
-    buildings_gdf['fac'] = buildings_gdf['height']*(buildings_gdf.width)
+    if 'height' in buildings_gdf.columns: buildings_gdf['fac'] = buildings_gdf['height']*(buildings_gdf.width)
     buildings_gdf.drop(['width','length'], axis=1, inplace = True)
     
     return buildings_gdf
@@ -414,7 +414,7 @@ def classify_lu(buildings_gdf, land_use):
                                                               else 'transport' if x in transport
                                                               else 'medical_care' if x in medical_care
                                                               else 'military' if x in military
-                                                              else x)
+                                                              else 'other')
     
     buildings_gdf[land_use][buildings_gdf[land_use].str.contains('residential') | buildings_gdf[land_use].str.contains('Condominium') | buildings_gdf[land_use].str.contains('Residential')] = 'residential'
     
@@ -578,8 +578,22 @@ def compute_scores(buildings_gdf, g_cW, g_iW):
     # scaling
     col = ['vis', 'fac', 'height', 'area','a_vis', 'cult','prag']
     col_inverse = ['neigh', 'road']
-    for i in col: uf.scaling_columnDF(buildings_gdf, i)
-    for i in col_inverse: uf.scaling_columnDF(buildings_gdf, i, inverse = True) 
+                                                                     
+    for i in col: 
+        if i not in buildings_gdf.columns:
+            buildings_gdf[i] = 0.0
+            buildings_gdf[i+'_sc'] = 0.0
+        else: 
+            if buildings_gdf[i].max() == 0.0: buildings_gdf[i+'_sc'] = 0.0
+            else: uf.scaling_columnDF(buildings_gdf, i)
+    
+    for i in col_inverse: 
+        if i not in buildings_gdf.columns:
+            buildings_gdf[i] = 0.0
+            buildings_gdf[i+'_sc'] = 0.0
+        else: 
+            if buildings_gdf[i].max() == 0.0: buildings_gdf[i+'_sc'] = 0.0
+            else: uf.scaling_columnDF(buildings_gdf, i, inverse = True) 
   
     # computing scores   
     buildings_gdf['vScore'] = (buildings_gdf['fac_sc']*g_iW['fac'] + buildings_gdf['height_sc']*g_iW['height'] +
@@ -589,7 +603,9 @@ def compute_scores(buildings_gdf, g_cW, g_iW):
     
     # rescaling components
     col = ['vScore', 'sScore']
-    for i in col: uf.scaling_columnDF(buildings_gdf, i)
+    for i in col: 
+        if buildings_gdf[i].max() == 0.0: buildings_gdf[i+'_sc'] = 0.0
+        else: uf.scaling_columnDF(buildings_gdf, i)
     buildings_gdf['cScore'] = buildings_gdf['cult_sc']
     buildings_gdf['pScore'] = buildings_gdf['prag_sc']
     
@@ -624,7 +640,10 @@ def local_scores(buildings_gdf, l_cW, l_iW, buffer = 1500):
     buildings_gdf['lScore'] = 0.0
     buildings_gdf['vScore_l'] = 0.0
     buildings_gdf['sScore_l'] = 0.0
-    
+                                          
+                                          
+    for i in col+col_inverse: 
+        if i not in buildings_gdf.columns: buildings_gdf[i] = 0.0  
     col = ['vis', 'fac', 'height', 'area','a_vis', 'cult','prag']
     col_inverse = ['neigh', 'road']
    

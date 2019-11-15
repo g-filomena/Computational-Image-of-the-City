@@ -98,7 +98,7 @@ def plot_points(gdf, column, classes = 7, ms = 0.9, ms_col = None, title = 'Plot
     plt.show() 
     
     
-def plot_lines(gdf, column = None, classes = 7, lw = 1.1, title = 'Plot', scheme = None, cmap = 'Greys_r', 
+def plot_lines(gdf, column = None, classes = 7, lw = 1.1, title = 'Plot', scheme = None, bins = None, cmap = 'Greys_r', 
                legend = False, cb = False, bb = True, f=10):
     """
     It creates a plot from a lineStrings GDF.
@@ -160,22 +160,23 @@ def plot_lines(gdf, column = None, classes = 7, lw = 1.1, title = 'Plot', scheme
         leg.get_texts()[4].set_text('0.75 - 1.00')
         
     elif scheme == "pedestrians":
-        bins = [10, 30, 50, 70, 90, 110, 130, 150, 170]
+        bins = bins
+        k = len(bins) + 1
         cl = ps.User_Defined(gdf[column], bins)
-        gdf.assign(cl = cl.yb).plot(ax = ax, column= 'cl', categorical = True, k = 9, cmap = cmap, linewidth = lw, legend=True)
+        gdf.assign(cl = cl.yb).plot(ax = ax, column= 'cl', categorical = True, k = k, cmap = cmap, linewidth = lw, legend=True)
         
-        # Lynch legend
+        # legend
         leg = ax.get_legend()
-        leg.get_texts()[0].set_text('0 - 10')
-        leg.get_texts()[1].set_text('10 - 30')
-        leg.get_texts()[2].set_text('30 - 50')
-        leg.get_texts()[3].set_text('50 - 70')
-        leg.get_texts()[4].set_text('70 - 90')
-        leg.get_texts()[5].set_text('90 - 110')
-        leg.get_texts()[6].set_text('110 - 130')
-        leg.get_texts()[7].set_text('130 - 150')
-        leg.get_texts()[8].set_text('150 - 170')
-    
+        
+        for n, b in enumerate(bins):
+            print(n)
+            if n == 0: leg.get_texts()[n].set_text(str(0)+' - '+str(b))
+            else: 
+                try:
+                    leg.get_texts()[n].set_text(str(bins[n-1])+' - '+str(b))
+                except:
+                    continue
+        
     elif scheme != None:
         gdf.plot(ax = ax, column = column, k = classes, cmap = cmap, linewidth = lw, scheme = scheme, legend = legend)
     else: gdf.plot(ax = ax, linewidth = lw, color = 'black') # plain map

@@ -1,25 +1,15 @@
 import pandas as pd, numpy as np, geopandas as gpd
-import functools
 import math
 from math import sqrt
-
-from scipy import sparse
-from scipy.sparse import linalg
-import pysal as ps
-
 from shapely.geometry import Point, LineString, Polygon, MultiPolygon, mapping, MultiLineString
 from shapely.ops import cascaded_union, linemerge, nearest_points
 
 import ast
 import utilities as uf
 import street_network_functions as snf
-pd.set_option('precision', 10)
 import warnings
+pd.set_option('precision', 10)
 warnings.simplefilter(action='ignore', category=FutureWarning)
-
-# math functions for angle computations
-# from Abhinav Ramakrishnan answer in https://stackoverflow.com/a/28261304/7375309
-
 
 def euclidean_distance(xs, ys, xt, yt):
     """ xs stands for x source and xt for x target """
@@ -130,10 +120,8 @@ def simplify_dual_lines_junctions(nodes_gdf, edges_gdf, update_counts = False):
     
     print('Simplifying intersections: first part -------------------------- ')
     processed = []
-
-    to_do = [85496, 85497, 85505, 85507, 85513]    
+   
     for row in o_edges.itertuples():
-#         if (row.Index in to_do) == False: continue
         if row.Index in processed: continue  
     
         for r in [ix_u, ix_v]:

@@ -1,23 +1,19 @@
-import matplotlib as mp, pandas as pd, numpy as np, geopandas as gpd
-import functools
-import math
-from math import sqrt
+import matplotlib as mp, pandas as pd, numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
-import pysal as ps
-import random
-import pylab
 import matplotlib.colors as cols
-from mpl_toolkits.axes_grid1 import make_axes_locatable
-from shapely.geometry import Point, LineString, MultiLineString
-from numpy.random import randn
-from scipy import sparse
-from scipy.sparse import linalg
 import matplotlib.patches as mpatches
-import sys
-from time import sleep
-pd.set_option('precision', 10)
+
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 from mpl_toolkits.mplot3d.art3d import Line3DCollection
+
+from shapely.geometry import Point, LineString, MultiLineString
+
+
+
+
+pd.set_option('precision', 10)
+
 
 """
 Series of utilies for plotting LineString, Points or Polygons geodataframes, and other operations.
@@ -462,27 +458,7 @@ def plot_multiplex(M, multiplex_edges):
 
     return(fig)
             
-    
-def overlap_lines(gdf, gdf_c, lw = 0.9, title = 'Plot', f = 15):
-    
-    # background black or white - basic settings 
-#     fig, ax = plt.subplots(ncols = 1, figsize=(f, f), facecolor = fcolor)
-#     fig.suptitle(title, color = tcolor)
-        # background black or white - basic settings 
-    fig, ax = plt.subplots(ncols = 1, figsize=(f, f),)
-    fig.suptitle(title)
-    plt.axis('equal')
-    ax.set_axis_off()
-    gdf.plot(ax = ax, linewidth = lw, color = 'black') # categorical map
-    gdf_c.plot(ax = ax, linewidth = lw, color = 'red')
-    
-#     if bb == True: tcolor = 'white'
-#     else: tcolor = 'black'
-#     rect = fig.patch    
-#     if bb == True: rect.set_facecolor('black')
-#     else: rect.set_facecolor('white')   
-
-    plt.show()    
+        
 
 
             

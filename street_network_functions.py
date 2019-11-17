@@ -1,16 +1,10 @@
 import warnings
 warnings.simplefilter(action='ignore', category=FutureWarning)
 import osmnx as ox, networkx as nx, matplotlib.cm as cm, pandas as pd, numpy as np, geopandas as gpd
-import functools
 import community
 import math
 from math import sqrt
-import matplotlib.pyplot as plt
 import ast
-
-from scipy import sparse
-from scipy.sparse import linalg
-import pysal as ps
 
 from shapely.geometry import Point, LineString, Polygon, MultiPolygon, mapping, MultiLineString
 from shapely.ops import cascaded_union, linemerge, nearest_points

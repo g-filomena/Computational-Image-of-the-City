@@ -1,14 +1,6 @@
 import pandas as pd, numpy as np, geopandas as gpd, matplotlib.pyplot as plt
-import functools
-import math
-from math import sqrt
 from shapely.geometry import Point, LineString, Polygon, MultiPolygon, mapping, MultiLineString
 from shapely.ops import cascaded_union, linemerge
-from scipy.sparse import linalg
-import pysal as ps
-
-from time import sleep
-import sys
 pd.set_option('precision', 10)
 
 import utilities as uf

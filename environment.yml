@@ -3,15 +3,9 @@ channels:
   - defaults
   - conda-forge
 dependencies:
-  - fiona=1.8.4=py37h22081e2_0
-  - geopandas=0.6.1=py_0
-  - importlib_metadata=0.23=py37_0
+  - osmnx==0.10
+  - geopandas=0.6.1
+  - importlib_metadata=0.23
   - pip:
-    - descartes==1.1.0
-    - kiwisolver==1.1.0
-    - matplotlib==3.1.1
-    - networkx==2.4
-    - osmnx==0.10
-    - pyparsing==2.4.5
     - python-louvain==0.13
 

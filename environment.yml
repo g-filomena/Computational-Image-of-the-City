@@ -4,8 +4,8 @@ channels:
   - conda-forge
 dependencies:
   - osmnx==0.10
-  - geopandas=0.6.1
   - importlib_metadata=0.23
+  - pip=19.3.1
   - pip:
     - python-louvain==0.13
 

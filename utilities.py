@@ -380,11 +380,11 @@ def merge_lines(geolines):
     geoline = LineString([coor for coor in coords])
     return(geoline)
             
-def print_row(index_column):
-    sys.stdout.write('\r')
-    sys.stdout.write("at row: "+ str(index_column))
-    sys.stdout.flush()
-    sleep(0.0001)
+# def print_row(index_column):
+#     sys.stdout.write('\r')
+#     sys.stdout.write("at row: "+ str(index_column))
+#     sys.stdout.flush()
+#     sleep(0.0001)
     
 def merge_disconnected_lines(list_lines):
     new_line = []

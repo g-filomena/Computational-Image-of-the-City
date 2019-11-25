@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import matplotlib.colors as cols
 import matplotlib.patches as mpatches
+import pylab
 
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from mpl_toolkits.mplot3d.art3d import Line3DCollection
@@ -323,17 +324,21 @@ def plot_lines_aside(gdf, gdf_c = None, classes = 7, lw = 0.9, columnA = None, c
     # background black or white - basic settings 
     
     if columnA != None: gdf.sort_values(by = columnA, ascending = True, inplace = True)    
-
-    fcolor = 'white'
+    
+    if bb == True: fcolor = 'black'
+    else: fcolor = 'white'
+    print(fcolor)
     fig, (ax1, ax2) = plt.subplots(ncols = 2, figsize=(15, 8), facecolor = fcolor)
     if bb == True: tcolor = 'white'
     else: tcolor = 'black'
     rect = fig.patch    
     if bb == True: rect.set_facecolor('black')
-    else: rect.set_facecolor('white')   
-    
+    else: rect.set_facecolor('white')  
     fig.suptitle(title, color = tcolor)
-
+    
+    plt.axis('equal')
+    ax2.set_axis_off()
+    ax1.set_axis_off()
     col = [columnA, columnB]
     
     for n, i in enumerate([ax1, ax2]):

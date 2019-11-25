@@ -8,22 +8,18 @@ import utilities as uf
 
 """
 This set of functions is designed for extracting the computational Image of The City.
-Computational landmarks can be extracted employing the following functions (see notebook '2_Landmarks.ipynb' for usages and pipeline).
+Computational landmarks can be extracted employing the following functions (see notebooks '2_Landmarks.ipynb' for usages and pipeline).
 
 """
         
 	
 
-def select_buildings(city_buildings, area_to_clip, height_field, base_field = None, area_obstructions = None):
+def select_buildings(buildings, area_to_clip, height_field, base_field = None, area_obstructions = None):
     """    
     The function take a sets of buildings, returns two smaller GDFs of buildings: the case-study area, plus a larger area containing other 
     buildings, called 'obstructions' (for analyses which include adjacent buildings). If the area for clipping the obstructions is not
     provided a buffer from the case-study is used to build the obstructions GDF.
-    
-    downloads and creates a simplified OSMNx graph for a selected area.
-    Afterwards, geopandas dataframes for nodes and edges are created, assigning new nodeID and streeID identifiers.
-    osmid are indeed heavy and confusing.
-        
+            
     Parameters
     ----------
     city_buildings, area_to_clip: GeoDataFrames
@@ -33,10 +29,7 @@ def select_buildings(city_buildings, area_to_clip, height_field, base_field = No
     Returns
     -------
     GeoDataFrames
-    """
-    # clipping buildings in the case-study area
-    buildings = city_buildings[city_buildings.geometry.within(area_to_clip.geometry.loc[0])]
-    
+    """   
     # computing area, reassigning columns
     city_buildings['area'] = city_buildings['geometry'].area
     city_buildings['height'] = city_buildings[height_field]
@@ -55,14 +48,14 @@ def select_buildings(city_buildings, area_to_clip, height_field, base_field = No
     if  (area_obstructions is None): area_obstructions = area_to_clip.geometry.loc[0].buffer(800)
     else: area_obstructions = area_obstructions.geometry.loc[0]
         
-    city_buildings= city_buildings[(city_buildings['area'] > 199) & (city_buildings['height'] >= 1)]
+    city_buildings = city_buildings[(city_buildings['area'] > 199) & (city_buildings['height'] >= 1)]
     obstructions = city_buildings[city_buildings.geometry.within(area_obstructions)]
         
     # clipping buildings in the case-study area
-    buildings = city_buildings[city_buildings.geometry.within(area_to_clip.geometry.loc[0])]
-    buildings['r_height'] = buildings['height'] + buildings['base']
+    study_area_buildings = city_buildings[city_buildings.geometry.within(area_to_clip.geometry.loc[0])]
+    study_area_buildings['r_height'] = study_area_buildings['height'] + study_area_buildings['base'] # relative_height
 
-    return(buildings, obstructions)
+    return(study_area_buildings, obstructions)
    
 def structural_properties(buildings_gdf, obstructions_gdf, street_gdf, buffer = 150):
     """
@@ -78,7 +71,7 @@ def structural_properties(buildings_gdf, obstructions_gdf, street_gdf, buffer = 
     GeoDataFrame
     """
     
-    index_geometry = buildings_gdf.columns.get_loc("geometry")+1 
+    ix_geo = buildings_gdf.columns.get_loc("geometry")+1 
     
     # spatial index
     sindex = obstructions_gdf.sindex
@@ -87,7 +80,7 @@ def structural_properties(buildings_gdf, obstructions_gdf, street_gdf, buffer = 
     buildings_gdf['road'] = 0.0
     
     for row in buildings_gdf.itertuples():    
-        g = row[index_geometry]
+        g = row[ix_geo]
         buff = g.buffer(buffer)
         t = g.envelope
         coords = mapping(t)['coordinates'][0]
@@ -126,7 +119,7 @@ def advance_visibility(buildings_gdf, obstructions_gdf, distance = 300):
     Parameters
     ----------
     buildings_gdf, obstructions_gdf: GeoDataFrames
-    radium: float
+    distance: float
    
     Returns
     -------
@@ -138,7 +131,7 @@ def advance_visibility(buildings_gdf, obstructions_gdf, distance = 300):
     
     # sindex
     sindex = obstructions_gdf.sindex
-    index_geometry = buildings_gdf.columns.get_loc("geometry")+1
+    ix_geo = buildings_gdf.columns.get_loc("geometry")+1
     counter = 0
     
     for row in buildings_gdf.itertuples():
@@ -146,14 +139,14 @@ def advance_visibility(buildings_gdf, obstructions_gdf, distance = 300):
         # indicates progress
         uf.print_row(row.Index)        
         # creating buffer
-        origin = row[index_geometry].centroid
-        exteriors = list(row[index_geometry].exterior.coords)
+        origin = row[ix_geo].centroid
+        exteriors = list(row[ix_geo].exterior.coords)
         no_holes = Polygon(exteriors)
         
         # identifying obstructions in an area of 2000 mt around the building
         possible_obstacles_index = list(sindex.intersection(origin.buffer(2000).bounds))
         possible_obstacles = obstructions_gdf.iloc[possible_obstacles_index]
-        possible_obstacles = obstructions_gdf[obstructions_gdf.geometry != row[index_geometry]]
+        possible_obstacles = obstructions_gdf[obstructions_gdf.geometry != row[ix_geo]]
         possible_obstacles = obstructions_gdf[~obstructions_gdf.geometry.within(no_holes)]
 
         start = 0.0
@@ -202,10 +195,10 @@ def advance_visibility(buildings_gdf, obstructions_gdf, distance = 300):
         
         # subtracting th area of the building and computing the area of the polygon (area of visibility)
         try:
-            poly_vis = poly.difference(row[index_geometry])
+            poly_vis = poly.difference(row[ix_geo])
         except:
             pp = poly.buffer(0)
-            poly_vis = pp.difference(row[index_geometry])      
+            poly_vis = pp.difference(row[ix_geo])      
         buildings_gdf.at[row[0],'a_vis'] = poly_vis.area
         
         """
@@ -325,10 +318,10 @@ def cultural_meaning(buildings_gdf, cultural_gdf, score = None):
     # spatial index
     sindex = cultural_gdf.sindex 
     buildings_gdf['cult'] = 0
-    index_geometry = buildings_gdf.columns.get_loc("geometry")+1 
+    ix_geo = buildings_gdf.columns.get_loc("geometry")+1 
     
     for row in buildings_gdf.itertuples():
-        g = row[index_geometry] # geometry
+        g = row[ix_geo] # geometry
         possible_matches_index = list(sindex.intersection(g.bounds)) # looking for possible candidates in the external GDF
         possible_matches = cultural_gdf.iloc[possible_matches_index]
         precise_matches = possible_matches[possible_matches.intersects(g)]
@@ -440,12 +433,12 @@ def land_use_from_polygons(buildings_gdf, other_gdf, column, land_use_field):
     
     # spatial index
     sindex = other_gdf.sindex
-    index_geometry = buildings_gdf.columns.get_loc("geometry")+1 
-    index_geometryPol = other_gdf.columns.get_loc("geometry")+1 
+    ix_geo = buildings_gdf.columns.get_loc("geometry")+1 
+    ix_geoPol = other_gdf.columns.get_loc("geometry")+1 
     
     for row in buildings_gdf.itertuples():
 
-        g = row[index_geometry] #geometry
+        g = row[ix_geo] #geometry
         possible_matches_index = list(sindex.intersection(g.bounds)) # looking for intersecting geometries
         possible_matches = other_gdf.iloc[possible_matches_index]
         precise_matches = possible_matches[possible_matches.intersects(g)]
@@ -454,7 +447,7 @@ def land_use_from_polygons(buildings_gdf, other_gdf, column, land_use_field):
         if (len(precise_matches) == 0): continue # no intersecting features in the other_gdf
 
         for row_C in precise_matches.itertuples(): # for each possible candidate, computing the extension of the area of intersection
-            t = row_C[index_geometryPol]
+            t = row_C[ix_geoPol]
             try:
                 area_intersec = t.intersection(g).area
             except: 
@@ -494,11 +487,11 @@ def land_use_from_points(buildings_gdf, other_gdf, column, land_use_field):
     buildings_gdf[column] = None
     sindex = other_gdf.sindex # spatial index
 
-    index_geometry = buildings_gdf.columns.get_loc("geometry")+1 
+    ix_geo = buildings_gdf.columns.get_loc("geometry")+1 
 
     for row in buildings_gdf.itertuples():
 
-        g = row[index_geometry] # geometry
+        g = row[ix_geo] # geometry
 
         possible_matches_index = list(sindex.intersection(g.bounds))
         possible_matches = other_gdf.iloc[possible_matches_index]
@@ -533,13 +526,13 @@ def pragmatic_meaning(buildings_gdf, buffer = 200):
     buildings_gdf['nr'] = 1 # to count
     sindex = buildings_gdf.sindex # spatial index
     buildings_gdf['prag']= 0.0
-    index_geometry = buildings_gdf.columns.get_loc("geometry")+1
-    index_land_use = buildings_gdf.columns.get_loc("land_use")+1 
+    ix_geo = buildings_gdf.columns.get_loc("geometry")+1
+    ix_land_use = buildings_gdf.columns.get_loc("land_use")+1 
 
     for row in buildings_gdf.itertuples():
-        g = row[index_geometry] #geometry
+        g = row[ix_geo] #geometry
         b = g.buffer(buffer)
-        use = row[index_land_use]
+        use = row[ix_land_use]
 
         possible_matches_index = list(sindex.intersection(b.bounds))
         possible_matches = buildings_gdf.iloc[possible_matches_index]
@@ -629,7 +622,7 @@ def local_scores(buildings_gdf, l_cW, l_iW, buffer = 1500):
     
     buildings_gdf = buildings_gdf.copy()
     spatial_index = buildings_gdf.sindex # spatial index
-    index_geometry = buildings_gdf.columns.get_loc("geometry")+1
+    ix_geo = buildings_gdf.columns.get_loc("geometry")+1
     buildings_gdf['lScore'] = 0.0
     buildings_gdf['vScore_l'] = 0.0
     buildings_gdf['sScore_l'] = 0.0
@@ -642,7 +635,7 @@ def local_scores(buildings_gdf, l_cW, l_iW, buffer = 1500):
    
     # recomputing the scores per each building in relation to its neighbours, in an area whose extent is regulated by 'buffer'
     for row in buildings_gdf.itertuples():
-        b = row[index_geometry].centroid.buffer(buffer)
+        b = row[ix_geo].centroid.buffer(buffer)
         possible_matches_index = list(spatial_index.intersection(b.bounds))
         possible_matches = buildings_gdf.iloc[possible_matches_index].copy()
         LL = possible_matches[possible_matches.intersects(b)]

@@ -14,8 +14,7 @@ load_folder = "C:/Users/g_filo01/sciebo/Scripts/Image of the City/Outputs/London
 aprx = arcpy.mp.ArcGISProject("CURRENT")
 
 # buildings, obstructions files, observer points (nodes from where computing the sight_lines)
-buildings = env+"/"+city_name+"_landmarks_noADV.shp"
-obstructions = env+"/"+city_name+"_landmarks_noADV.shp"
+buildings = env+"/"+city_name+"_only_global_landmarks.shp"
 observer_points =  load_folder+"/"+city_name+"_nodes_simplified_BB.shp"
 
 # transforming the obstructions layer in a 3d Layer and then multipatch
@@ -40,41 +39,39 @@ geoDB = "C:/Users/g_filo01/sciebo/Scripts/ArcGis/GeoDB.gdb"
 arcpy.FeatureClassToGeodatabase_conversion(city_name+"_multiPatch", geoDB)
 obstructions = geoDB+"/"+city_name+"_multiPatch"
 sight_lines = geoDB+"/"+city_name+"_sightlines"
-sight_lines_tmp = geoDB+"/"+city_name+"_sight_lines_tmp"
+# sight_lines_tmp = geoDB+"/"+city_name+"_sight_lines_tmp"
+# nodes_tmp = geoDB+"/"+city_name+"_nodes_tmp"
+# cursor_nodes = arcpy.arcpy.da.SearchCursor(observer_points, ['SHAPE@', 'height', 'nodeID', 'FID'])
+# cursor_buildings = arcpy.arcpy.da.SearchCursor(buildings,  ['SHAPE@', 'height', 'buildingID', 'FID'])
 
-cursor_nodes = arcpy.arcpy.da.SearchCursor(observer_points, ['SHAPE@', 'height', 'nodeID', 'FID'])
-cursor_buildings = arcpy.arcpy.da.SearchCursor(buildings,  ['SHAPE@', 'height', 'buildingID', 'FID'])
 first = True
+nr = int(arcpy.GetCount_management(observer_points).getOutput(0))
 
 for nodes in cursor_nodes:
-# construct sight-lines:
-	arcpy.MakeFeatureLayer_management(observer_points, "nodes_tmp", "FID = " + str(nodes[3]))
-	
-	for building in cursor_buildings:
-		arcpy.MakeFeatureLayer_management(buildings, "buildings_tmp", "FID = " + str(building[3]))
-		arcpy.ddd.ConstructSightLines(observer_points, buildings, sight_lines_tmp, height_observer, heigth_buildings, None, 60, direction)
+	print(str(nodes[3]), " out of ", str(nr))
+	# construct sight-lines:
+	arcpy.MakeFeatureLayer_management(observer_points, nodes_tmp, "FID = " + str(nodes[3]))
+	arcpy.ddd.ConstructSightLines(nodes_tmp, buildings, sight_lines_tmp, height_observer, heigth_buildings, None, 100, direction)
 
-		# remove line shortest than 300 m
-		with arcpy.da.UpdateCursor(sight_lines_tmp, 'SHAPE@LENGTH') as cursor:
-			for row in cursor:
-				if row[0] < 300:
-					cursor.deleteRow()
-		if int(arcpy.GetCount_management(sight_lines_tmp).getOutput(0)) == 0: continue
-		arcpy.ddd.Intervisibility(sight_lines_tmp, obstructions, visible_field = "visible")
-		with arcpy.da.UpdateCursor(selection, "visible") as cursor:
-			for row in cursor:
-				if (row[0] == 0) | (row[0] == None): 
-					cursor.deleteRow()
+	# remove line shorter than 300 m
+	with arcpy.da.UpdateCursor(sight_lines_tmp, 'SHAPE@LENGTH') as cursor:
+		for row in cursor:
+			if row[0] < 300: cursor.deleteRow()
+				
+	if int(arcpy.GetCount_management(sight_lines_tmp).getOutput(0)) == 0: continue
+	arcpy.ddd.Intervisibility(sight_lines_tmp, obstructions, visible_field = "visible")
+	with arcpy.da.UpdateCursor(sight_lines_tmp, "visible") as cursor:
+		for row in cursor:
+			if (row[0] == 0) | (row[0] == None): cursor.deleteRow()
 		
-		if int(arcpy.GetCount_management(sight_lines_tmp).getOutput(0)) == 0: continue
-		if first == True: 
-			arcpy.CopyFeatures_management(sight_lines_tmp, sight_lines)
-			arcpy.DeleteFeatures_management(sight_lines_tmp)
-			first = False
-		else:
-			arcpy.Append_management(sight_lines_tmp, sight_lines)
-			arcpy.DeleteFeatures_management(sight_lines_tmp)
-		break
+	if int(arcpy.GetCount_management(sight_lines_tmp).getOutput(0)) == 0: continue
+	if first == True: 
+		arcpy.CopyFeatures_management(sight_lines_tmp, sight_lines)
+		arcpy.DeleteFeatures_management(sight_lines_tmp)
+		first = False
+	else:
+		arcpy.Append_management(sight_lines_tmp, sight_lines)
+		arcpy.DeleteFeatures_management(sight_lines_tmp)
            
 # maximum = int(arcpy.GetCount_management(sight_lines).getOutput(0))
 # quantity = 1000000

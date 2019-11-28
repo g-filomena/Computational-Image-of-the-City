@@ -386,7 +386,7 @@ def plot_lines_aside(gdf, gdf_c = None, classes = 7, lw = 0.9, columnA = None, c
         # other schemes
         elif scheme != None: 
 
-            gdf.plot(ax = i, column = col[n], k = classes, cmap = cmap, linewidth = lw, scheme = scheme, legend = legend)
+            gdf.plot(ax = i, column = col[n], cmap = cmap, linewidth = lw, scheme = scheme, legend = legend, classification_kwds={'bins':bins})
             leg = i.get_legend()
             leg.set_bbox_to_anchor((0., 0., 0.2, 0.2))
             

@@ -32,26 +32,25 @@ arcpy.Layer3DToFeatureClass_3d("o_layer3d", city_name+"_multiPatch", None, "ENAB
 
 # sight_lines parameters
 height_observer = "height"
-heigth_buildings = "r_height"
+heigth_buildings = "height"
 direction = "NOT_OUTPUT_THE_DIRECTION"
 
 # files
 geoDB = "C:/Users/g_filo01/sciebo/Scripts/ArcGis/GeoDB.gdb"
 arcpy.FeatureClassToGeodatabase_conversion(city_name+"_multiPatch", geoDB)
 obstructions = geoDB+"/"+city_name+"_multiPatch"
-sightlines_file = geoDB+"/"+city_name+"_sightlines"
+sightlines_file = geoDB+"/"+city_name+"_sight_lines"
 
 # construct sight-lines:
-arcpy.ddd.ConstructSightLines(observer_points, buildings, sightlines_file, height_observer, heigth_buildings, None, 60, direction)
+arcpy.ddd.ConstructSightLines(observer_points, buildings, sightlines_file, height_observer, heigth_buildings, None, 100, direction)
 
 # remove line shortest than 200 m
 with arcpy.da.UpdateCursor(sightlines_file, 'SHAPE@LENGTH') as cursor:
     for row in cursor:
-        if row[0] < 200:
-            cursor.deleteRow()
+        if row[0] < 300: cursor.deleteRow()
             
 maximum = int(arcpy.GetCount_management(sightlines_file).getOutput(0))
-quantity = 1000000
+quantity = 100000
 cycles = int(maximum/quantity)+1
 to_merge = []
 
@@ -72,8 +71,7 @@ for i in range(1,cycles):
 	arcpy.ddd.Intervisibility(selection, obstructions, visible_field = "visible")
 	with arcpy.da.UpdateCursor(selection, "visible") as cursor:
 		for row in cursor:
-			if (row[0] == 0) | (row[0] == None): 
-				cursor.deleteRow()
+			if (row[0] == 0) | (row[0] == None): cursor.deleteRow()
 	
 # merging the file created above
 arcpy.Merge_management(to_merge, geoDB+"/"+city_name+"_sightlines")

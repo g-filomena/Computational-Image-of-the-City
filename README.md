@@ -16,7 +16,7 @@ The analysis workflow is written in Python and relies on the library [UrbanFormP
 
 The methods are fully documented in *A Computational approach to ‘The Image of the City’* by Filomena, Verstegen, and Manley, published in [Cities](https://doi.org/10.1016/j.cities.2019.01.006).
 
-## Notebooks purposes
+## Notebooks' purposes
 
 * **[1a_Nodes_Paths_Districts_Web.ipynb](1a_Nodes_Paths_Districts_Web.ipynb)** It supports the identification of * Nodes, Paths* and *Districts* from street network's graphs automatically extracted from *OSM*. The user does not need to provide any kind of data.
 * **[1b_Nodes_Paths_Districts_Local_Files.ipynb](1b_Nodes_Paths_Districts_Local_Files.ipynb)** It supports the identification of *Nodes, Paths* and *Districts* from the street network's graph obtained from a *.shp* file.  The user is encouraged to use this notebook if they wish to work with a street network *.shp* file in their possession.

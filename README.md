@@ -4,7 +4,6 @@
 
 **The repository contains a series of notebooks for extracting the Computational Image of the City from geospatial datasets**
 
-
 <img src="image_of_the_city_boston.jpg" alt="Image of the City (© The MIT Press)" />
 
 ## Introduction
@@ -24,6 +23,7 @@ The methods are fully documented in *A Computational approach to ‘The Image of
 * **[2b_Landmarks_Local_Files.ipynb](1a_Nodes_Paths_Districts_Web.ipynb)** It identifies *Landmarks* from a set of buildings in a *.shp* file provided by the user. This is the recommended and complete way to extract landmarks (if the buildings' height field is complete). 
 * **[3_Barriers.ipynb](3_Barriers.ipynb)** It supports the identification of *Barriers* (*Edges* in *The Image of the City*) from several features in *OSM* (roads, railways, waterbodies and waterbanks, parks).
 * **[4_Street-Network_Simplification.ipynb](4_Street-Network_Simplification.ipynb)** - This notebook presents a complex pipeline to automatically simplify a street network (either obtained from *OSM* or local files), as concerns: roundabouts, complex junctions, dual lines.
+
 
 
 

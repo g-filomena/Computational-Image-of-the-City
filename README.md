@@ -10,8 +10,7 @@
 
 This repository guides the user through the extraction of the Computational Image of the City; In other words, it allows to automatically identify a set of salient urban features in line with the definitions laid down by Kevin Lynch in [The Image of The City](https://mitpress.mit.edu/books/image-city) using open and freely available geospatial datasets.
 
-The analysis workflow is written in Python and relies on the library [UrbanFormPy](https://github.com/g-filomena/urbanFormPy), and its dependencies (mainly: [Geopandas](http://geopandas.org), [NetworkX](https://networkx.github.io) and
-[OSMNx](https://osmnx.readthedocs.io/en/stable/))
+The analysis workflow is written in Python and relies on the library [cityImage](https://github.com/g-filomena/cityImage), and its dependencies (mainly: [Geopandas](http://geopandas.org), [NetworkX](https://networkx.github.io) and [OSMNx](https://osmnx.readthedocs.io/en/stable/))
 
 The methods are fully documented in *A Computational approach to ‘The Image of the City’* by Filomena, Verstegen, and Manley, published in [Cities](https://doi.org/10.1016/j.cities.2019.01.006).
 
